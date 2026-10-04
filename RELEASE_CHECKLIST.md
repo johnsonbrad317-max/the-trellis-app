@@ -59,15 +59,9 @@ Identifiers used throughout (confirmed identical in the Xcode project,
         Xcode Runner target (the app configures Firebase from
         `firebase_options.dart`, so it isn't needed). If you ever want it
         bundled, add it in Xcode (File > Add Files to "Runner").
-- [ ] **Replace the app icon.** *(Done: the official icon is generated for both
-      platforms.)* Both platforms still carry the stock Flutter
-      logo (`android/app/src/main/res/mipmap-*/ic_launcher.png` are
-      byte-identical to the Flutter template; `ios/Runner/Assets.xcassets/AppIcon.appiconset`
-      is the Flutter logo). Internal TestFlight / internal Play testing will
-      accept it; Apple's Beta App Review and both stores' public review will
-      not. iOS: 1024×1024 PNG with no transparency plus the sizes listed in
-      `Contents.json`. Android: all five `mipmap-*` densities (an adaptive icon
-      is recommended).
+- [x] **App icon** — the official icon is generated for both platforms (iOS: no
+      alpha, on #F9F6F0; Android: adaptive + legacy). Still to do: Google Play
+      needs a separate 512x512 store icon uploaded in Play Console.
 - [ ] **Apple Developer Program membership** (organisation) and **Google Play
       developer account**, each with the legal entity that will own the app.
 - [ ] **Apple: Paid Applications agreement, tax and banking** completed in App
