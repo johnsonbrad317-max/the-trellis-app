@@ -46,6 +46,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: 6.0.0
+  flutter_launcher_icons: 0.14.4
 
 flutter:
   # Material's icon font is not used by the app's own UI (every glyph is
@@ -87,3 +88,33 @@ flutter:
         - asset: assets/fonts/EBGaramond-ExtraBoldItalic.ttf
           weight: 800
           style: italic
+
+# App icons: `dart run flutter_launcher_icons` (re-run after changing the art;
+# the generated files are committed). Source art is the transparent arch; every
+# icon sits on the app's antique parchment, #F9F6F0.
+flutter_launcher_icons:
+  # iOS: App Store icons must have no transparency, so it is flattened onto
+  # the parchment (remove_alpha_ios) — no alpha channel in any generated size.
+  ios: true
+  image_path_ios: "assets/images/the_trellis_icon_transparent.png"
+  remove_alpha_ios: true
+  background_color_ios: "#F9F6F0"
+
+  # Android: an adaptive icon (parchment layer + the transparent arch on top)
+  # for Android 8+, and a pre-flattened square for older launchers. The inset
+  # keeps the arch inside the area every launcher mask (circle, squircle...)
+  # leaves visible.
+  android: "ic_launcher"
+  image_path_android: "assets/icon/the_trellis_icon_parchment.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#F9F6F0"
+  adaptive_icon_foreground: "assets/images/the_trellis_icon_transparent.png"
+  adaptive_icon_foreground_inset: 16
+
+  # Not shipped; the web build is only a development preview.
+  web:
+    generate: false
+  windows:
+    generate: false
+  macos:
+    generate: false
