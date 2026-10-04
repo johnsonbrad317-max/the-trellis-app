@@ -1,0 +1,127 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Network access. Flutter's template only declares this in the debug and
+         profile manifests; without it here a RELEASE build has no network at
+         all (Supabase, Firebase, RevenueCat, PostHog, Google Fonts). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Push Notifications: required at runtime on Android 13+ (API 33+). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Deliberately NOT declared (least privilege; each one must be justified
+         in Google Play's Data safety form and is shown on the store listing):
+           * READ_CALENDAR / WRITE_CALENDAR: add_2_calendar hands the event to
+             the user's calendar app with an ACTION_INSERT intent, which needs
+             no permission. The app never reads or writes the calendar itself.
+           * ACCESS_COARSE_LOCATION / ACCESS_FINE_LOCATION: nothing in the app
+             reads device location (meeting places are typed, or picked with
+             Google Places autocomplete over HTTPS).
+         Add them back only together with code that actually requests them. -->
+
+    <application
+        android:label="The Trellis"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+        <!-- PostHog: disables the native SDK's own auto-init so it never
+             configures itself before Dart runs. AnalyticsService.initialize
+             (lib/services/analytics_service.dart) is the one place the
+             project token, host, and privacy settings (session replay off,
+             text masking, etc.) are set. -->
+        <meta-data
+            android:name="com.posthog.posthog.AUTO_INIT"
+            android:value="false" />
+        <!-- Firebase Cloud Messaging: small icon for notifications the system
+             tray shows while the app is in the background or killed (the
+             push-notification-engine sends `notification` messages without an
+             icon). No default channel is declared on purpose: FCM then uses
+             its built-in fallback channel, which needs no app code. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_trellis" />
+    </application>
+
+    <!-- Package visibility (Android 11 / API 30+). Without these entries
+         url_launcher's canLaunchUrl() returns false and the app's "text",
+         "email" and "open link" buttons silently do nothing, and
+         add_2_calendar's resolveActivity() finds no calendar app.
+         See https://developer.android.com/training/package-visibility -->
+    <queries>
+        <!-- Flutter engine (io.flutter.plugin.text.ProcessTextPlugin). -->
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+
+        <!-- canLaunchUrl(sms:...) — text a Witness / Runner / roster member.
+             url_launcher probes with ACTION_VIEW; SENDTO is declared as well
+             because some messaging apps only register that action. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="sms" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+
+        <!-- canLaunchUrl(mailto:...) — support email, roster email. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+
+        <!-- canLaunchUrl(https://...) — terms, privacy, learn-more links. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+
+        <!-- add_2_calendar: "Add to calendar" opens the calendar app's
+             new-event screen (CalendarContract.Events.CONTENT_URI resolves
+             to the dir MIME type; the item type is what the plugin's README
+             documents — both are declared). -->
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.dir/event" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.item/event" />
+        </intent>
+
+        <!-- Not needed: geo: (maps) is opened with launchUrl() directly, with
+             an https fallback, and share_plus uses the system chooser —
+             neither queries package visibility. -->
+    </queries>
+</manifest>

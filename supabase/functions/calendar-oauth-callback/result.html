@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  The Trellis — calendar connection result page.
+
+  Host this file anywhere static and https (Firebase Hosting, your marketing
+  site, ...) and set the Edge Function secret CALENDAR_RESULT_REDIRECT_URL to
+  its URL. calendar-oauth-callback redirects here with
+  ?status=connected|cancelled|error&provider=google|outlook|apple.
+
+  Why it exists: Supabase serves text/html from the default *.supabase.co
+  domain as plain text, so the callback can't render this page itself there.
+  This page is fully static and shows only fixed strings chosen from the
+  status — nothing from the URL is ever written into the page as HTML.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Calendar - The Trellis</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #F9F6F0; color: #1E3A2B; }
+  body { font-family: "EB Garamond", Garamond, Georgia, "Times New Roman", serif; min-height: 100vh;
+         display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
+  .plate { max-width: 420px; width: 100%; text-align: center; background: #F8F1E0; border: 1px solid #B8860B;
+           border-radius: 20px; padding: 4px; box-shadow: 0 8px 18px rgba(30,58,43,0.18); }
+  .inner { border: 1px solid rgba(184,134,11,0.6); border-radius: 16px; padding: 32px 24px; }
+  .mark { width: 56px; height: 56px; line-height: 52px; margin: 0 auto 16px; border-radius: 50%;
+          border: 2px solid #B8860B; font-size: 28px; }
+  .mark.ok { color: #1E3A2B; }
+  .mark.err { color: #9E4B2F; }
+  h1 { font-size: 28px; font-weight: 600; margin: 0 0 12px; }
+  p { font-size: 19px; line-height: 1.45; margin: 0; }
+  .rule { height: 1px; background: #B8860B; opacity: 0.5; margin: 20px auto; width: 60%; }
+  .foot { font-size: 16px; color: #B8860B; }
+</style>
+</head>
+<body>
+  <main class="plate"><div class="inner">
+    <!-- Neutral until the script below runs, so a failed connection can never
+         be shown as "connected" (e.g. with scripts blocked). -->
+    <div class="mark ok" id="mark" aria-hidden="true">&middot;</div>
+    <h1 id="title">Calendar</h1>
+    <p id="message">Return to The Trellis to see your calendar connection.</p>
+    <div class="rule"></div>
+    <p class="foot">You can close this window and return to The Trellis.</p>
+  </div></main>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var labels = { google: 'Google Calendar', outlook: 'Outlook Calendar', apple: 'Apple Calendar' };
+      var provider = params.get('provider');
+      // Own keys only: "constructor" or "__proto__" is not a provider.
+      var label = Object.prototype.hasOwnProperty.call(labels, provider) ? labels[provider] : 'Your calendar';
+      var status = params.get('status');
+      var ok = status === 'connected';
+      var mark = document.getElementById('mark');
+      mark.className = 'mark ' + (ok ? 'ok' : 'err');
+      mark.textContent = ok ? '✓' : '!';
+      document.getElementById('title').textContent = ok ? 'Calendar connected' : 'Calendar not connected';
+      // Fixed sentences only; textContent, never innerHTML.
+      document.getElementById('message').textContent = ok
+        ? label + ' is connected. Return to The Trellis to continue.'
+        : status === 'cancelled'
+        ? 'The calendar connection was cancelled. You can try again from The Trellis.'
+        : 'We could not connect your calendar. Please try again from The Trellis.';
+    })();
+  </script>
+</body>
+</html>

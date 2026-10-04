@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>The Trellis</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>trellis</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- Export compliance: the app's only cryptography is exempt (HTTPS/TLS
+	     provided by the OS, plus hashing and token signature checks used for
+	     authentication). Declaring it here stops TestFlight from holding every
+	     build on the "Missing Compliance" question. Revisit if the app ever
+	     adds its own encryption of user content. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!-- URL schemes the app passes to canLaunchUrl() (url_launcher). iOS
+	     answers "cannot open" for any scheme not listed here, which would
+	     make the text / email / link buttons silently do nothing. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>sms</string>
+		<string>mailto</string>
+		<string>https</string>
+	</array>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<!-- Push Notifications: no usage-description string is required by iOS;
+	     permission is requested at runtime via UNUserNotificationCenter. This
+	     background mode lets silent/remote pushes (e.g. missed check-in
+	     alerts to a Witness) wake the app. The APNs entitlement lives in
+	     Runner/Runner.entitlements (CODE_SIGN_ENTITLEMENTS); the App ID must
+	     also have the Push Notifications capability enabled in the Apple
+	     Developer portal before the provisioning profile is created. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<!-- "Add to calendar" (add_2_calendar) presents Apple's own new-event
+	     sheet (EKEventEditViewController).
+	       * iOS 15-16: the plugin asks for calendar access first, so
+	         NSCalendarsUsageDescription is REQUIRED (missing = crash).
+	       * iOS 17+: the sheet runs out of process and the plugin asks for
+	         nothing; the write-only string is declared defensively so a
+	         future plugin version that requests write-only access cannot
+	         crash the app.
+	     The app never reads calendar contents on the device. -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>The Trellis adds the meetings you confirm with your Witness or Runner to your calendar.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>The Trellis adds the meetings you confirm with your Witness or Runner to your calendar.</string>
+	<!-- Apple's new-event sheet can look up Contacts for its location and
+	     invitee fields and offers "Current Location". On iOS 15-16 the sheet
+	     runs inside this app, so those lookups are made in the app's name and
+	     iOS terminates an app that has no purpose string for them
+	     (add_2_calendar's README calls out the Contacts one). The Trellis
+	     itself never reads contacts or device location. -->
+	<key>NSContactsUsageDescription</key>
+	<string>When you add a meeting to your calendar, the calendar sheet can suggest places and people from your contacts. The Trellis itself never reads your contacts.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>When you add a meeting to your calendar, the calendar sheet can use your current location for the event's place. The Trellis itself never tracks your location.</string>
+	<!-- PostHog: disables the native SDK's own auto-init so it never
+	     configures itself before Dart runs. AnalyticsService.initialize
+	     (lib/services/analytics_service.dart) is the one place the project
+	     token, host, and privacy settings (session replay off, text
+	     masking, etc.) are set. -->
+	<key>com.posthog.posthog.AUTO_INIT</key>
+	<false/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+</dict>
+</plist>

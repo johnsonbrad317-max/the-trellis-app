@@ -1,0 +1,414 @@
+# =============================================================================
+# The Trellis - Codemagic CI/CD
+# =============================================================================
+# Workflows
+#   ios-release      tag v*  (or manual)  -> signed .ipa  -> TestFlight
+#   android-release  tag v*  (or manual)  -> signed .aab  -> Google Play internal track (draft)
+#   pr-checks        pull requests        -> pub get, analyze, test (no signing)
+#   supabase-deploy  DISABLED template at the bottom of this file
+#
+# Nothing secret lives in this file. Everything below must exist in the
+# Codemagic dashboard before the release workflows can pass (step-by-step in
+# RELEASE_CHECKLIST.md):
+#
+#   Integration (Team settings > Integrations > Developer Portal)
+#     codemagic_api_key .......... App Store Connect API key (App Manager role)
+#
+#   Code signing identities (Team settings > codemagic.yaml settings)
+#     iOS certificate + App Store provisioning profile for
+#       com.usengineering.trellis (the App ID must have Push Notifications on)
+#     Android keystore with reference name: trellis_upload_keystore
+#
+#   Environment variable groups (App settings > Environment variables)
+#     trellis_app_config
+#       REVENUECAT_APPLE_API_KEY ....... RevenueCat public SDK key, appl_...
+#       REVENUECAT_GOOGLE_API_KEY ...... RevenueCat public SDK key, goog_...
+#       GOOGLE_PLACES_API_KEY .......... Google Cloud key, Places API (New)
+#     google_play
+#       GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS ... full JSON key of the Play
+#         service account. (Codemagic's current docs and its `google-play`
+#         CLI use this name; older guides call it GCLOUD_SERVICE_ACCOUNT_CREDENTIALS.)
+#
+#   Optional variables (either group, or per manual build):
+#     BUILD_NUMBER_OVERRIDE ...... force a specific build number
+#     ALLOW_MISSING_APP_CONFIG ... "true" lets a release build proceed with an
+#                                  empty key (the feature it powers is then off)
+#
+# This file has not been run: it was written on a machine with no Xcode and no
+# Android SDK. Treat the first build of each workflow as the real test.
+# =============================================================================
+
+definitions:
+  # --- Tool versions ---------------------------------------------------------
+  # `stable` = the newest stable Flutter on the Codemagic image. pubspec.lock
+  # needs Flutter >= 3.44.0 (Dart >= 3.13.3); the app was developed on 3.47.4.
+  # For reproducible release builds, pin it: replace `stable` with an exact
+  # version (for example 3.47.4) once you have confirmed in a build log / the
+  # Codemagic "Software versions" list that the version is available there.
+  flutter_version: &flutter_version stable
+
+  # --- Shared configuration --------------------------------------------------
+  email_publishing: &email_publishing
+    recipients:
+      - brad.johnson@usengineering.com
+    notify:
+      success: true
+      failure: true
+
+  release_triggering: &release_triggering
+    events:
+      - tag
+    tag_patterns:
+      - pattern: 'v*'
+        include: true
+    cancel_previous_builds: true
+
+  # --- Shared script steps ---------------------------------------------------
+  scripts:
+    - &check_app_config
+      name: Check build-time configuration
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        missing=""
+        for name in $REQUIRED_APP_CONFIG; do
+          if [ -z "${!name:-}" ]; then
+            missing="$missing $name"
+          fi
+        done
+        if [ -n "$missing" ]; then
+          echo "Missing build-time configuration:$missing"
+          echo "Add the variable(s) to the 'trellis_app_config' group in Codemagic"
+          echo "(App settings > Environment variables). See RELEASE_CHECKLIST.md."
+          if [ "${ALLOW_MISSING_APP_CONFIG:-false}" = "true" ]; then
+            echo "ALLOW_MISSING_APP_CONFIG=true: continuing; the feature each key powers will be disabled in this build."
+          else
+            exit 1
+          fi
+        else
+          echo "Build-time configuration present."
+        fi
+
+    # --enforce-lockfile: resolve exactly what pubspec.lock records, or fail.
+    # Direct dependencies are pinned to exact versions in pubspec.yaml; this
+    # extends the same guarantee to every transitive package. pubspec.lock must
+    # be committed.
+    - &pub_get
+      name: Get Flutter packages (locked)
+      script: flutter pub get --enforce-lockfile
+
+    # Strict: any analyzer error, warning or info fails the build. The code base
+    # analyzes with zero issues as of 1.0.0 - keep it that way. (If a Flutter
+    # upgrade introduces a new lint you need time to address, relax this to
+    # `flutter analyze --no-fatal-infos` rather than removing the step.)
+    - &analyze
+      name: Static analysis
+      script: flutter analyze
+
+    # A failing test fails the build (no ignore_failure on purpose).
+    - &unit_tests
+      name: Unit and widget tests
+      script: |
+        mkdir -p test-results
+        flutter test --machine > test-results/flutter.json
+      test_report: test-results/flutter.json
+
+workflows:
+  # ===========================================================================
+  # iOS -> TestFlight
+  # ===========================================================================
+  ios-release:
+    name: The Trellis - iOS TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      # Name of the App Store Connect API key added in the Codemagic dashboard
+      # (Team settings > Integrations > Developer Portal). It also provides
+      # the credentials the `app-store-connect` CLI uses below.
+      app_store_connect: codemagic_api_key
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.usengineering.trellis
+      groups:
+        - trellis_app_config
+      vars:
+        BUNDLE_ID: "com.usengineering.trellis"
+        # The app's numeric Apple ID: App Store Connect > your app > App
+        # Information > General Information > Apple ID. Replace the placeholder
+        # (keep the quotes). The build stops with a clear error until you do.
+        APP_STORE_APPLE_ID: "0000000000"
+        REQUIRED_APP_CONFIG: "REVENUECAT_APPLE_API_KEY GOOGLE_PLACES_API_KEY"
+      flutter: *flutter_version
+      xcode: latest
+      cocoapods: default
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
+    triggering:
+      <<: *release_triggering
+    scripts:
+      - *check_app_config
+      - name: Set up code signing settings on Xcode project
+        script: xcode-project use-profiles
+      - *pub_get
+      # The repository has no ios/Podfile: Flutter uses Swift Package Manager
+      # for most plugins and generates a Podfile for the ones that still need
+      # CocoaPods (purchases_flutter 8.x). `flutter build ipa` runs pod install
+      # itself; this step only pre-installs when a Podfile already exists.
+      - name: Install pods (if a Podfile exists)
+        script: |
+          if [ -f ios/Podfile ]; then
+            cd ios && pod install
+          else
+            echo "No ios/Podfile - flutter build will generate it if a plugin needs CocoaPods."
+          fi
+      - *analyze
+      - *unit_tests
+      - name: Work out version and build number
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          BUILD_NAME=$(sed -n 's/^version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' pubspec.yaml | head -n 1)
+          if [ -z "$BUILD_NAME" ]; then
+            echo "ERROR: could not read 'version:' from pubspec.yaml"
+            exit 1
+          fi
+
+          if [ -n "${BUILD_NUMBER_OVERRIDE:-}" ]; then
+            NEXT="$BUILD_NUMBER_OVERRIDE"
+            echo "Using BUILD_NUMBER_OVERRIDE=$NEXT"
+          else
+            if [ -z "${APP_STORE_APPLE_ID:-}" ] || [ "$APP_STORE_APPLE_ID" = "0000000000" ]; then
+              echo "ERROR: APP_STORE_APPLE_ID is still the placeholder."
+              echo "Create the app record in App Store Connect, then put its numeric"
+              echo "Apple ID into codemagic.yaml (ios-release > environment > vars)."
+              exit 1
+            fi
+            # Prints the highest TestFlight build number, or nothing when the
+            # app has no builds yet. A failed lookup is treated like "no
+            # builds": if that guess is wrong, App Store Connect rejects the
+            # duplicate build number at upload and nothing wrong is published.
+            RAW=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID") || {
+              echo "WARNING: could not read the latest TestFlight build number (see the output above)."
+              RAW=""
+            }
+            LATEST=$(printf '%s\n' "$RAW" | grep -E '^[0-9]+$' | tail -n 1 || true)
+            if [ -z "$LATEST" ]; then
+              echo "No previous numeric build number found - treating this as the first build."
+              LATEST=0
+            fi
+            NEXT=$((10#$LATEST + 1))
+          fi
+
+          echo "Version $BUILD_NAME, build number $NEXT"
+          echo "APP_BUILD_NAME=$BUILD_NAME" >> $CM_ENV
+          echo "APP_BUILD_NUMBER=$NEXT" >> $CM_ENV
+      - name: Build signed ipa
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          flutter build ipa --release \
+            --build-name="$APP_BUILD_NAME" \
+            --build-number="$APP_BUILD_NUMBER" \
+            --export-options-plist=/Users/builder/export_options.plist \
+            --obfuscate \
+            --split-debug-info=build/symbols/ios \
+            --dart-define=REVENUECAT_APPLE_API_KEY="${REVENUECAT_APPLE_API_KEY:-}" \
+            --dart-define=GOOGLE_PLACES_API_KEY="${GOOGLE_PLACES_API_KEY:-}"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      # Dart symbol files: required to de-obfuscate Dart stack traces from this
+      # exact build (flutter symbolize). Keep them with the release.
+      - build/symbols/ios/*.symbols
+    publishing:
+      email: *email_publishing
+      app_store_connect:
+        auth: integration
+        # Uploads the build and makes it available in TestFlight. Internal
+        # testers get it as soon as Apple finishes processing.
+        submit_to_testflight: true
+        # External testing: create the group in App Store Connect > TestFlight,
+        # fill in Test Information (Beta App Review needs it), then uncomment.
+        # beta_groups:
+        #   - Beta Testers
+        submit_to_app_store: false
+
+  # ===========================================================================
+  # Android -> Google Play (internal testing track)
+  # ===========================================================================
+  android-release:
+    name: The Trellis - Android Play internal
+    instance_type: linux_x2
+    max_build_duration: 45
+    environment:
+      # Reference name of the upload keystore in Codemagic (Team settings >
+      # codemagic.yaml settings > Code signing identities > Android keystores).
+      # Exports CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS and
+      # CM_KEY_PASSWORD, which android/app/build.gradle.kts reads.
+      android_signing:
+        - trellis_upload_keystore
+      groups:
+        - trellis_app_config
+        - google_play
+      vars:
+        PACKAGE_NAME: "com.usengineering.trellis"
+        REQUIRED_APP_CONFIG: "REVENUECAT_GOOGLE_API_KEY GOOGLE_PLACES_API_KEY"
+      flutter: *flutter_version
+      java: 17
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+        - $HOME/.gradle/caches
+    triggering:
+      <<: *release_triggering
+    scripts:
+      - *check_app_config
+      - name: Set up local.properties
+        script: |
+          echo "flutter.sdk=${FLUTTER_ROOT:-$HOME/programs/flutter}" > "$CM_BUILD_DIR/android/local.properties"
+      - *pub_get
+      - *analyze
+      - *unit_tests
+      - name: Work out version and build number
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          BUILD_NAME=$(sed -n 's/^version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' pubspec.yaml | head -n 1)
+          if [ -z "$BUILD_NAME" ]; then
+            echo "ERROR: could not read 'version:' from pubspec.yaml"
+            exit 1
+          fi
+
+          if [ -n "${BUILD_NUMBER_OVERRIDE:-}" ]; then
+            NEXT="$BUILD_NUMBER_OVERRIDE"
+            echo "Using BUILD_NUMBER_OVERRIDE=$NEXT"
+          else
+            # Highest versionCode across all Play tracks. The command fails
+            # when the app has no uploaded bundle yet (and on credential
+            # problems); both are treated as "first build". If that guess is
+            # wrong, Google Play rejects the duplicate versionCode at upload
+            # and nothing wrong is published.
+            RAW=$(google-play get-latest-build-number --package-name "$PACKAGE_NAME") || {
+              echo "WARNING: could not read the latest versionCode from Google Play (see the output above)."
+              RAW=""
+            }
+            LATEST=$(printf '%s\n' "$RAW" | grep -E '^[0-9]+$' | tail -n 1 || true)
+            if [ -z "$LATEST" ]; then
+              echo "No previous versionCode found - treating this as the first build."
+              LATEST=0
+            fi
+            NEXT=$((10#$LATEST + 1))
+          fi
+
+          echo "Version $BUILD_NAME, versionCode $NEXT"
+          echo "APP_BUILD_NAME=$BUILD_NAME" >> $CM_ENV
+          echo "APP_BUILD_NUMBER=$NEXT" >> $CM_ENV
+      - name: Build signed app bundle
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          flutter build appbundle --release \
+            --build-name="$APP_BUILD_NAME" \
+            --build-number="$APP_BUILD_NUMBER" \
+            --obfuscate \
+            --split-debug-info=build/symbols/android \
+            --dart-define=REVENUECAT_GOOGLE_API_KEY="${REVENUECAT_GOOGLE_API_KEY:-}" \
+            --dart-define=GOOGLE_PLACES_API_KEY="${GOOGLE_PLACES_API_KEY:-}"
+    artifacts:
+      - build/**/outputs/**/*.aab
+      # R8 mapping file: de-obfuscates Java/Kotlin stack traces.
+      - build/**/outputs/**/mapping.txt
+      # Dart symbol files: de-obfuscate Dart stack traces (flutter symbolize).
+      - build/symbols/android/*.symbols
+    publishing:
+      email: *email_publishing
+      google_play:
+        credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        # While the app has never been published, Google Play only accepts
+        # DRAFT releases through the API; you then press "Save and publish" on
+        # the draft in Play Console > Testing > Internal testing. Once Google
+        # accepts non-draft releases for this app, set this to false.
+        # NOTE: the very first .aab must be uploaded by hand in Play Console -
+        # the first run of this workflow is expected to build and sign
+        # correctly and then fail at this publishing step. Download the .aab
+        # artifact from that build and upload it manually.
+        submit_as_draft: true
+
+  # ===========================================================================
+  # Pull request checks (no signing, no secrets)
+  # ===========================================================================
+  pr-checks:
+    name: The Trellis - PR checks
+    instance_type: linux_x2
+    max_build_duration: 20
+    environment:
+      flutter: *flutter_version
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+    triggering:
+      events:
+        - pull_request
+      branch_patterns:
+        - pattern: '*'
+          include: true
+          source: true
+      cancel_previous_builds: true
+    scripts:
+      - *pub_get
+      - *analyze
+      - *unit_tests
+
+# =============================================================================
+# DISABLED TEMPLATE - Supabase deploy.
+#
+# Do NOT enable the `db push` step as it stands:
+#   * Every migration so far has been applied by hand in the Supabase SQL
+#     editor, so the remote project has no migration history for the CLI to
+#     compare against - `db push` would try to run everything again.
+#   * Migration 015 (the demo-code migration) was applied to the database but
+#     is not in this repository.
+#   * The files in supabase/migrations are named 002_..., init_schema.sql etc.,
+#     not the <timestamp>_name.sql form the Supabase CLI requires.
+# Reconcile the history first (rename the files, add 015, then
+# `supabase migration repair` so the remote marks them as applied).
+#
+# The functions step is safer, but it also has never been run from CI. The
+# flags below come from each function's header comment.
+#
+# To use: move this block under `workflows:` (indented two spaces), remove the
+# leading "# ", and create a `supabase_deploy` variable group holding
+# SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF and SUPABASE_DB_PASSWORD.
+# =============================================================================
+#  supabase-deploy:
+#    name: The Trellis - Supabase deploy (manual only)
+#    instance_type: linux_x2
+#    max_build_duration: 15
+#    environment:
+#      groups:
+#        - supabase_deploy
+#      node: latest
+#    scripts:
+#      - name: Deploy Edge Functions
+#        script: |
+#          #!/usr/bin/env bash
+#          set -euo pipefail
+#          # JWT verification ON (called by signed-in app users):
+#          for fn in calendar-connect-start calendar-disconnect calendar-availability delete-account submit-feedback; do
+#            npx --yes supabase@latest functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+#          done
+#          # JWT verification OFF (authenticate with their own shared secret / signed state):
+#          for fn in push-notification-engine revenuecat-webhook calendar-oauth-callback; do
+#            npx --yes supabase@latest functions deploy "$fn" --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+#          done
+#      # - name: Push database migrations  (KEEP DISABLED - read the warning above)
+#      #   script: |
+#      #     npx --yes supabase@latest link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+#      #     npx --yes supabase@latest db push --password "$SUPABASE_DB_PASSWORD"

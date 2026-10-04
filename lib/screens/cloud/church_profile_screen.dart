@@ -1,0 +1,164 @@
+import 'package:flutter/material.dart';
+
+import '../../models/dna_rhythm.dart';
+import '../../models/rule_item.dart';
+import '../../models/runner_profile.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/bookplate_app_bar.dart';
+import '../../widgets/bookplate_dialog.dart';
+import '../../widgets/dna_rhythm_dialog.dart';
+import '../../widgets/trellis_scaffold.dart';
+
+/// Church-configuration settings for the Cloud role — separate from the
+/// read-only Congregational Health analytics dashboard. This is where a
+/// Church Admin actually manages the church's DNA Rhythms (add, edit,
+/// remove), so that data-shaping actions never live on an at-a-glance
+/// analytics screen. (Insights offers a shortcut to add one too; both open
+/// the same dialog.)
+class ChurchProfileScreen extends StatelessWidget {
+  const ChurchProfileScreen({super.key, required this.profile});
+
+  final RunnerProfile profile;
+
+  /// "Weekly · Sun" / "Weekly · Mon, Wed, Fri" / "Daily" — the schedule as the
+  /// Runners who receive this rhythm will see it.
+  static String _scheduleLabel(DnaRhythm rhythm) {
+    if (rhythm.frequency != RuleFrequency.weekly) return rhythm.frequency.label;
+    final days = [
+      for (final weekday in weekdayOrder)
+        if (rhythm.weeklyDays.contains(weekday)) weekdayShortLabel(weekday),
+    ];
+    return days.isEmpty ? 'Weekly' : 'Weekly · ${days.join(', ')}';
+  }
+
+  Future<void> _confirmRemove(BuildContext context, DnaRhythm rhythm) async {
+    final confirmed = await showBookplateConfirm(
+      context,
+      title: 'Remove DNA Rhythm?',
+      message: 'This will cease tracking "${rhythm.title}" as a congregational metric for '
+          "the entire congregation, and it will stop being added to new Runners' Rule "
+          'of Life. Runners who already have it keep it on their own Rule of Life — '
+          'this cannot be undone from here.',
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    );
+    if (!confirmed || !context.mounted) return;
+
+    try {
+      await profile.removeDnaRhythm(rhythm.title);
+    } catch (_) {
+      if (context.mounted) showBookplateNotice(context, "Couldn't remove that rhythm. Try again.");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    // TrellisScaffold, like every other pushed screen: the same parchment,
+    // corner vines, vine-safe app bar and insets. (This screen used to build
+    // its own bare Scaffold, which left it the one page without the vines and
+    // with its header sitting higher than everywhere else.)
+    return TrellisScaffold(
+      appBar: const BookplateAppBar(title: 'Church Profile'),
+      body: ListenableBuilder(
+        listenable: profile,
+        builder: (context, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('DNA Rhythms', style: textTheme.headlineSmall),
+            const SizedBox(height: 4),
+            Text(
+              'Core rhythms defining our congregational baseline — mandated for every '
+              'Runner in this church, now and as they join.',
+              style: textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 20),
+            if (profile.dnaRhythms.isEmpty)
+              _Plate(
+                child: Text(
+                  'No DNA Rhythms yet. Add your first below — it is placed on the Rule of '
+                  'Life of every Runner in your church.',
+                  style: textTheme.bodyMedium,
+                ),
+              )
+            else
+              for (final rhythm in profile.dnaRhythms) ...[
+                _Plate(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(rhythm.title, style: textTheme.titleMedium),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${rhythm.category.label} · ${_scheduleLabel(rhythm)}',
+                        style: textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      // Wrap, not Row: the two buttons stack rather than
+                      // overflow at a large text size.
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        children: [
+                          BookplateButton(
+                            label: 'Edit',
+                            compact: true,
+                            variant: BookplateButtonVariant.secondary,
+                            onPressed: () =>
+                                showDnaRhythmDialog(context, profile, existing: rhythm),
+                          ),
+                          BookplateButton(
+                            label: 'Remove',
+                            compact: true,
+                            variant: BookplateButtonVariant.danger,
+                            onPressed: () => _confirmRemove(context, rhythm),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            const SizedBox(height: 12),
+            BookplateButton(
+              label: 'Add DNA Rhythm',
+              variant: BookplateButtonVariant.secondary,
+              onPressed: () => showDnaRhythmDialog(context, profile),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The parchment plate each rhythm (and the empty state) is cut from.
+class _Plate extends StatelessWidget {
+  const _Plate({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.vellum,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.antiqueBrass.withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.forestGreen.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}

@@ -1,0 +1,21 @@
+# Keep line endings stable across Windows (authoring) and macOS/Linux (CI).
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Xcode project files are text; treat them as LF so diffs stay readable.
+*.pbxproj text eol=lf
+*.plist text eol=lf
+*.entitlements text eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.jar binary
+*.jks binary
+*.keystore binary
