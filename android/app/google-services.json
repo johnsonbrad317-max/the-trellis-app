@@ -7,9 +7,28 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:896201231315:android:d86231e2b9eb3df397bd26",
+        "mobilesdk_app_id": "1:896201231315:android:17ba2a88c6484e7397bd26",
         "android_client_info": {
           "package_name": "com.unhinderedlives.trellis"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3emb3kdiCYKuhiLVZwSO5f9m3uBHFvPQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:896201231315:android:d86231e2b9eb3df397bd26",
+        "android_client_info": {
+          "package_name": "com.usengineering.trellis"
         }
       },
       "oauth_client": [],

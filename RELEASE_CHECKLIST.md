@@ -45,22 +45,20 @@ Identifiers used throughout (confirmed identical in the Xcode project,
         and fails without it; it is what pins every transitive package.
   - [ ] Add migration **015** (the demo-code migration you applied by hand) to
         `supabase/migrations/` so the repository can rebuild the database.
-- [ ] **Re-register the app in Firebase under the new ID
-      `com.unhinderedlives.trellis`.** The bundle ID was changed from
-      `com.usengineering.trellis`, but Firebase still holds the *old* app
-      registrations. `android/app/google-services.json` and
-      `lib/firebase_options.dart` had the ID text swapped so the project
-      compiles, but their `appId` / `apiKey` values still belong to the old
-      apps, so **push notifications will not work until this is done**:
-  - [ ] Firebase console (project `the-trellis-4a580`) > Project settings >
-        Add app: an **Android** app `com.unhinderedlives.trellis` and an
-        **iOS** app with the same bundle ID.
-  - [ ] Replace `android/app/google-services.json` with the file Firebase gives
-        you for the new Android app.
-  - [ ] Update the `android` and `ios` entries in `lib/firebase_options.dart`
-        (`appId`, `apiKey`, `iosBundleId`) — the quickest way is
-        `flutterfire configure --project=the-trellis-4a580` — then commit.
-  - [ ] Upload the APNs auth key to the **new** iOS app (section 4.1).
+- [x] **Firebase re-registered under `com.unhinderedlives.trellis`** (Android and
+      iOS apps created in project `the-trellis-4a580`). `google-services.json`,
+      `ios/Runner/GoogleService-Info.plist` and `lib/firebase_options.dart` now
+      carry the new app IDs; a test checks they agree with each other and with
+      the native projects. Still to do:
+  - [ ] Upload the APNs auth key to the **new** iOS app in Firebase (section
+        4.1) — push on iPhone fails without it.
+  - [ ] Optional: once the old `com.usengineering.trellis` apps are deleted in
+        the Firebase console, delete the second `client` entry from
+        `google-services.json` too.
+  - [ ] `GoogleService-Info.plist` is in the repo but is *not* added to the
+        Xcode Runner target (the app configures Firebase from
+        `firebase_options.dart`, so it isn't needed). If you ever want it
+        bundled, add it in Xcode (File > Add Files to "Runner").
 - [ ] **Replace the app icon.** *(Done: the official icon is generated for both
       platforms.)* Both platforms still carry the stock Flutter
       logo (`android/app/src/main/res/mipmap-*/ic_launcher.png` are

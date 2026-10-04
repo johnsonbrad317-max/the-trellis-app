@@ -58,7 +58,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyB3emb3kdiCYKuhiLVZwSO5f9m3uBHFvPQ',
-    appId: '1:896201231315:android:d86231e2b9eb3df397bd26',
+    appId: '1:896201231315:android:17ba2a88c6484e7397bd26',
     messagingSenderId: '896201231315',
     projectId: 'the-trellis-4a580',
     storageBucket: 'the-trellis-4a580.firebasestorage.app',
@@ -66,7 +66,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyC62Lia4k3P1CGMnQgOBeQgKNCxilfTMEY',
-    appId: '1:896201231315:ios:67b2c81f16edff3397bd26',
+    appId: '1:896201231315:ios:e5dfd96f0944173a97bd26',
     messagingSenderId: '896201231315',
     projectId: 'the-trellis-4a580',
     storageBucket: 'the-trellis-4a580.firebasestorage.app',

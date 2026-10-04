@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:trellis/firebase_options.dart';
 import 'package:trellis/models/rule_item.dart';
 import 'package:trellis/models/rule_of_life_baseline.dart';
 import 'package:trellis/models/watched_runner.dart';
@@ -13,6 +15,7 @@ import 'package:trellis/theme/app_theme.dart';
 void main() {
   _modelTests();
   _phase5Tests();
+  _firebaseConsistencyTests();
 
   group('starter baselines', () {
     test('every weekly rhythm has at least one day (the database rejects one without)', () {
@@ -195,6 +198,89 @@ void _phase5Tests() {
       expect(sources.contains('_SocialSignInRow'), isFalse);
       expect(sources.contains('Purchase Additional Licenses'), isFalse);
       expect(sources.toLowerCase().contains('coming soon'), isFalse);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Firebase / bundle identifier consistency
+// ---------------------------------------------------------------------------
+void _firebaseConsistencyTests() {
+  const bundleId = 'com.unhinderedlives.trellis';
+
+  String plistValue(String plist, String key) {
+    final match = RegExp('<key>$key</key>${r'\s*'}<string>([^<]*)</string>').firstMatch(plist);
+    expect(match, isNotNull, reason: '$key missing from GoogleService-Info.plist');
+    return match!.group(1)!;
+  }
+
+  group('Firebase configuration', () {
+    test('the iOS plist, firebase_options.dart and the Xcode project agree', () {
+      final plist = File('ios/Runner/GoogleService-Info.plist').readAsStringSync();
+      final ios = DefaultFirebaseOptions.ios;
+      expect(plistValue(plist, 'BUNDLE_ID'), bundleId);
+      expect(plistValue(plist, 'GOOGLE_APP_ID'), ios.appId);
+      expect(plistValue(plist, 'API_KEY'), ios.apiKey);
+      expect(plistValue(plist, 'GCM_SENDER_ID'), ios.messagingSenderId);
+      expect(plistValue(plist, 'PROJECT_ID'), ios.projectId);
+      expect(plistValue(plist, 'STORAGE_BUCKET'), ios.storageBucket);
+      expect(ios.iosBundleId, bundleId);
+
+      final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+      final ids = RegExp(r'PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);')
+          .allMatches(pbxproj)
+          .map((m) => m.group(1)!)
+          .toSet();
+      expect(ids, {bundleId, '$bundleId.RunnerTests'});
+    });
+
+    test('the Android JSON, firebase_options.dart and Gradle agree', () {
+      // The file may also list the previous registration (Firebase keeps it
+      // until it is deleted in the console); only this app's entry matters.
+      final clients = (jsonDecode(File('android/app/google-services.json').readAsStringSync())
+          as Map<String, dynamic>)['client'] as List<dynamic>;
+      final mine = clients.cast<Map<String, dynamic>>().where(
+            (c) => c['client_info']['android_client_info']['package_name'] == bundleId,
+          );
+      expect(mine, hasLength(1), reason: 'exactly one client for $bundleId');
+      final android = DefaultFirebaseOptions.android;
+      expect(mine.single['client_info']['mobilesdk_app_id'], android.appId);
+      expect(mine.single['api_key'][0]['current_key'], android.apiKey);
+
+      final gradle = File('android/app/build.gradle.kts').readAsStringSync();
+      expect(gradle, contains('applicationId = "$bundleId"'));
+      expect(gradle, contains('namespace = "$bundleId"'));
+      expect(
+        File('android/app/src/main/kotlin/com/unhinderedlives/trellis/MainActivity.kt')
+            .readAsStringSync(),
+        startsWith('package $bundleId'),
+      );
+    });
+
+    test('the old bundle identifier is gone everywhere', () {
+      final offenders = <String>[];
+      for (final entity in Directory('.').listSync(recursive: true, followLinks: false)) {
+        if (entity is! File) continue;
+        final path = entity.path.replaceAll(r'\', '/');
+        if (path.contains('/build/') ||
+            path.contains('/.dart_tool/') ||
+            path.contains('/.git/') ||
+            path.contains('/node_modules/') ||
+            !RegExp(r'\.(dart|kt|kts|gradle|json|plist|pbxproj|yaml|md|xml|xcconfig|txt)$')
+                .hasMatch(path)) {
+          continue;
+        }
+        // This file, the checklist (which describes the migration) and
+        // google-services.json (Firebase lists the previous registration there
+        // until it is deleted in the console) may legitimately name it.
+        if (path.endsWith('release_audit_test.dart') ||
+            path.endsWith('RELEASE_CHECKLIST.md') ||
+            path.endsWith('android/app/google-services.json')) {
+          continue;
+        }
+        if (entity.readAsStringSync().contains('com.usengineering')) offenders.add(path);
+      }
+      expect(offenders, isEmpty);
     });
   });
 }
