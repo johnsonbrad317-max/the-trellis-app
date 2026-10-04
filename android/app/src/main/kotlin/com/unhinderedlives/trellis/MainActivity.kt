@@ -1,4 +1,4 @@
-package com.usengineering.trellis
+package com.unhinderedlives.trellis
 
 import io.flutter.embedding.android.FlutterActivity
 

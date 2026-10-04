@@ -22,7 +22,7 @@ Identifiers used throughout (confirmed identical in the Xcode project,
 
 | What | Value |
 | --- | --- |
-| iOS bundle ID / Android application ID | `com.usengineering.trellis` |
+| iOS bundle ID / Android application ID | `com.unhinderedlives.trellis` |
 | Version | `1.0.0` (build number assigned by CI) |
 | Firebase project | `the-trellis-4a580` |
 | Supabase project ref | `qonsiliimbkcjmcnhonb` |
@@ -45,7 +45,24 @@ Identifiers used throughout (confirmed identical in the Xcode project,
         and fails without it; it is what pins every transitive package.
   - [ ] Add migration **015** (the demo-code migration you applied by hand) to
         `supabase/migrations/` so the repository can rebuild the database.
-- [ ] **Replace the app icon.** Both platforms still carry the stock Flutter
+- [ ] **Re-register the app in Firebase under the new ID
+      `com.unhinderedlives.trellis`.** The bundle ID was changed from
+      `com.usengineering.trellis`, but Firebase still holds the *old* app
+      registrations. `android/app/google-services.json` and
+      `lib/firebase_options.dart` had the ID text swapped so the project
+      compiles, but their `appId` / `apiKey` values still belong to the old
+      apps, so **push notifications will not work until this is done**:
+  - [ ] Firebase console (project `the-trellis-4a580`) > Project settings >
+        Add app: an **Android** app `com.unhinderedlives.trellis` and an
+        **iOS** app with the same bundle ID.
+  - [ ] Replace `android/app/google-services.json` with the file Firebase gives
+        you for the new Android app.
+  - [ ] Update the `android` and `ios` entries in `lib/firebase_options.dart`
+        (`appId`, `apiKey`, `iosBundleId`) — the quickest way is
+        `flutterfire configure --project=the-trellis-4a580` — then commit.
+  - [ ] Upload the APNs auth key to the **new** iOS app (section 4.1).
+- [ ] **Replace the app icon.** *(Done: the official icon is generated for both
+      platforms.)* Both platforms still carry the stock Flutter
       logo (`android/app/src/main/res/mipmap-*/ic_launcher.png` are
       byte-identical to the Flutter template; `ios/Runner/Assets.xcassets/AppIcon.appiconset`
       is the Flutter logo). Internal TestFlight / internal Play testing will
@@ -91,11 +108,11 @@ build fails at signing.
       identities > **iOS certificates**: generate (or upload) an **Apple
       Distribution** certificate.
 - [ ] Apple Developer portal > Profiles > create an **App Store** provisioning
-      profile for `com.usengineering.trellis` using that certificate.
+      profile for `com.unhinderedlives.trellis` using that certificate.
 - [ ] Codemagic > Code signing identities > **iOS provisioning profiles** >
       fetch (or upload) that profile.
       `codemagic.yaml` selects it by `distribution_type: app_store` +
-      `bundle_identifier: com.usengineering.trellis`.
+      `bundle_identifier: com.unhinderedlives.trellis`.
       **[UNVERIFIED]** exact menu names — Codemagic's UI changes; the concepts
       (one distribution certificate, one App Store profile, both stored under
       Code signing identities) are from the current docs.
@@ -165,7 +182,7 @@ the name `codemagic.yaml` uses.
 ## 2. Apple
 
 ### 2.1 Developer portal — App ID
-- [ ] Identifiers > App IDs > register **`com.usengineering.trellis`**
+- [ ] Identifiers > App IDs > register **`com.unhinderedlives.trellis`**
       (explicit, not wildcard).
 - [ ] Enable **Push Notifications**. (In-App Purchase is on by default and
       needs no entitlement.)
@@ -175,7 +192,7 @@ the name `codemagic.yaml` uses.
 ### 2.2 App Store Connect — app record
 - [ ] My Apps > + > New App: platform iOS, name "The Trellis" (must be unique
       on the store — have an alternative ready), bundle ID
-      `com.usengineering.trellis`, SKU of your choice.
+      `com.unhinderedlives.trellis`, SKU of your choice.
 - [ ] Copy the **Apple ID** (App Information) into `codemagic.yaml` (1.6).
 
 ### 2.3 Subscription product
@@ -357,7 +374,7 @@ Google's API cannot create the first release of a new app.
 
 ### 4.1 iOS push (APNs)
 - [ ] Project settings > Cloud Messaging > Apple app configuration > the iOS
-      app `com.usengineering.trellis` > upload the **APNs Auth Key** (.p8)
+      app `com.unhinderedlives.trellis` > upload the **APNs Auth Key** (.p8)
       with Key ID and Team ID. Without this no push reaches any iPhone.
 - [ ] `GoogleService-Info.plist` is **not** in the project and is **not
       needed**: Firebase is initialised from `lib/firebase_options.dart`.
@@ -372,7 +389,7 @@ Google's API cannot create the first release of a new app.
 
 ### 4.2 Android push
 - [ ] `android/app/google-services.json` is present and matches
-      `com.usengineering.trellis`. **No SHA-1 fingerprint is needed for Cloud
+      `com.unhinderedlives.trellis`. **No SHA-1 fingerprint is needed for Cloud
       Messaging.**
 - [ ] If you ever add an "Android apps" restriction to the Firebase Android
       API key in Google Cloud, include the SHA-1 of **both** the upload key and
@@ -389,9 +406,9 @@ Google's API cannot create the first release of a new app.
 ## 5. RevenueCat and Google Places
 
 ### 5.1 RevenueCat project
-- [ ] Add an **App Store** app (bundle `com.usengineering.trellis`) and upload
+- [ ] Add an **App Store** app (bundle `com.unhinderedlives.trellis`) and upload
       the In-App Purchase key from 2.3.
-- [ ] Add a **Play Store** app (package `com.usengineering.trellis`) and
+- [ ] Add a **Play Store** app (package `com.unhinderedlives.trellis`) and
       upload Play service-account credentials (RevenueCat's own guide lists the
       permissions; it can be the same service account as 3.3 with financial
       data access added).

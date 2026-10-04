@@ -16,7 +16,7 @@
 #
 #   Code signing identities (Team settings > codemagic.yaml settings)
 #     iOS certificate + App Store provisioning profile for
-#       com.usengineering.trellis (the App ID must have Push Notifications on)
+#       com.unhinderedlives.trellis (the App ID must have Push Notifications on)
 #     Android keystore with reference name: trellis_upload_keystore
 #
 #   Environment variable groups (App settings > Environment variables)
@@ -129,11 +129,11 @@ workflows:
     environment:
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.usengineering.trellis
+        bundle_identifier: com.unhinderedlives.trellis
       groups:
         - trellis_app_config
       vars:
-        BUNDLE_ID: "com.usengineering.trellis"
+        BUNDLE_ID: "com.unhinderedlives.trellis"
         # The app's numeric Apple ID: App Store Connect > your app > App
         # Information > General Information > Apple ID. Replace the placeholder
         # (keep the quotes). The build stops with a clear error until you do.
@@ -256,7 +256,7 @@ workflows:
         - trellis_app_config
         - google_play
       vars:
-        PACKAGE_NAME: "com.usengineering.trellis"
+        PACKAGE_NAME: "com.unhinderedlives.trellis"
         REQUIRED_APP_CONFIG: "REVENUECAT_GOOGLE_API_KEY GOOGLE_PLACES_API_KEY"
       flutter: *flutter_version
       java: 17

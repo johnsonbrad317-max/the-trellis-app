@@ -70,6 +70,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '896201231315',
     projectId: 'the-trellis-4a580',
     storageBucket: 'the-trellis-4a580.firebasestorage.app',
-    iosBundleId: 'com.usengineering.trellis',
+    iosBundleId: 'com.unhinderedlives.trellis',
   );
 }

@@ -39,7 +39,7 @@ val hasLocalKeystore: Boolean = localKeystorePath.isNotBlank()
 val hasReleaseKeystore: Boolean = hasCiKeystore || hasLocalKeystore
 
 android {
-    namespace = "com.usengineering.trellis"
+    namespace = "com.unhinderedlives.trellis"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -51,7 +51,7 @@ android {
     defaultConfig {
         // Must match the Play Console package, android/app/google-services.json
         // and the Firebase Android app. Do not change after the first upload.
-        applicationId = "com.usengineering.trellis"
+        applicationId = "com.unhinderedlives.trellis"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // Flutter's defaults (minSdk 24 / target 36 / compile 36 on Flutter 3.47)
