@@ -137,7 +137,7 @@ workflows:
         # The app's numeric Apple ID: App Store Connect > your app > App
         # Information > General Information > Apple ID. Replace the placeholder
         # (keep the quotes). The build stops with a clear error until you do.
-        APP_STORE_APPLE_ID: "0000000000"
+        APP_STORE_APPLE_ID: "6819007688"
         REQUIRED_APP_CONFIG: "REVENUECAT_APPLE_API_KEY GOOGLE_PLACES_API_KEY"
       flutter: *flutter_version
       xcode: latest
