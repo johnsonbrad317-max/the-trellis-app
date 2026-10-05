@@ -1,6 +1,7 @@
 /// The texts a Witness can send a Runner from the app — each one written for
 /// the situation it is offered in, in one place so the wording can be reviewed
-/// and changed without hunting through screens.
+/// and changed without hunting through screens. The wording below is the
+/// owner's own.
 ///
 /// Two rules every draft here keeps:
 ///
@@ -34,39 +35,28 @@ enum WitnessTextReason {
   prayed,
 }
 
-/// The draft for [reason], addressed to [firstName]. [daysQuiet] is used only
-/// by [WitnessTextReason.goneQuiet].
-String witnessTextFor(WitnessTextReason reason, {required String firstName, int daysQuiet = 0}) {
+/// The draft for [reason], addressed to [firstName].
+String witnessTextFor(WitnessTextReason reason, {required String firstName}) {
   final name = firstName.trim().isEmpty ? 'friend' : firstName.trim();
   return switch (reason) {
     WitnessTextReason.missedAnchor =>
-      'Hey $name, I saw yesterday was a hard day for one of your anchor rhythms in your '
-          "Rule of Life. No judgment at all — I'm in your corner and praying for you. "
-          'Want to talk today?',
+      'Hey $name - I saw you missed one of your anchor rhythms yesterday. Just wanted to '
+          "let you know I'm praying for you, and I'd love to chat today if you're free.",
     WitnessTextReason.hardWeek =>
-      "Hey $name, it looks like it's been an uphill week with your Rule of Life. I'm not "
-          "keeping score — I just want to know how you're really doing. Can I call you, or "
-          'could we get together this week?',
+      "Hey $name, looks like it's been a tough week. Just checking in to see how you're "
+          "doing. Do you have time for a call today? I'd love to catch up.",
     WitnessTextReason.goneQuiet =>
-      "Hey $name, I haven't seen a check-in on your Rule of Life in ${_quietSpan(daysQuiet)} "
-          "and wanted to reach out. No pressure — how are you doing? I'm here whenever you "
-          'want to talk.',
+      "Hey $name - I noticed it's been a few days since you checked in. Just wanted to "
+          "reach out and see how you're holding up. Let me know if you have time to connect "
+          'later this week.',
     WitnessTextReason.gettingStarted =>
-      "Hey $name, I'm glad to be walking with you on the Trellis. Whenever you're ready to "
-          "commit your Rule of Life, I'd love to hear what you're choosing and pray through "
-          'it with you.',
+      "Hey $name, I'm really glad we're doing this together. Whenever you get your rhythms "
+          "set up, I'd love to hear what you landed on so I can be praying for you.",
     WitnessTextReason.thriving =>
-      'Hey $name, I can see how faithful you have been with your Rule of Life this week, '
-          "and it encourages me. Keep going — I'm proud of you and praying for you.",
+      "Hey $name - I saw you had a great week sticking to your Rule of Life. It's really "
+          "encouraging to see. Just wanted to let you know I'm praying for you.",
     WitnessTextReason.prayed =>
       'Hey $name, I just spent some time praying for you and for the things you have '
           'shared with me. I am with you in this. How can I keep praying this week?',
   };
-}
-
-String _quietSpan(int days) {
-  if (days <= 2) return 'a couple of days';
-  if (days <= 6) return '$days days';
-  if (days <= 13) return 'about a week';
-  return 'a while';
 }

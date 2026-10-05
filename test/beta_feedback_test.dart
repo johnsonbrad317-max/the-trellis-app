@@ -85,46 +85,52 @@ void main() {
   // The texts a Witness sends
   // ---------------------------------------------------------------------------
   group('witnessTextFor', () {
-    test('every situation has its own wording, addressed by first name', () {
-      final texts = {
-        for (final reason in WitnessTextReason.values)
-          reason: witnessTextFor(reason, firstName: 'Melanie', daysQuiet: 4),
-      };
-      expect(texts.values.toSet(), hasLength(WitnessTextReason.values.length));
-      for (final text in texts.values) {
-        expect(text, startsWith('Hey Melanie,'));
-      }
-    });
+    test('each situation sends exactly the wording the owner approved', () {
+      String text(WitnessTextReason reason) => witnessTextFor(reason, firstName: 'Melanie');
 
-    test('the alert texts mention the Rule of Life and never a rhythm by name', () {
-      for (final reason in [
-        WitnessTextReason.missedAnchor,
-        WitnessTextReason.hardWeek,
-        WitnessTextReason.goneQuiet,
-        WitnessTextReason.gettingStarted,
-        WitnessTextReason.thriving,
-      ]) {
-        final text = witnessTextFor(reason, firstName: 'Sam', daysQuiet: 3);
-        expect(text, contains('Rule of Life'), reason: '$reason');
-        // The function is not even given a rhythm's title; this pins the
-        // wording that stands in for one.
-        expect(text.toLowerCase(), isNot(contains('purity')), reason: '$reason');
-      }
       expect(
-        witnessTextFor(WitnessTextReason.missedAnchor, firstName: 'Sam'),
-        contains('one of your anchor rhythms'),
+        text(WitnessTextReason.missedAnchor),
+        'Hey Melanie - I saw you missed one of your anchor rhythms yesterday. Just wanted to '
+        "let you know I'm praying for you, and I'd love to chat today if you're free.",
+      );
+      expect(
+        text(WitnessTextReason.hardWeek),
+        "Hey Melanie, looks like it's been a tough week. Just checking in to see how you're "
+        "doing. Do you have time for a call today? I'd love to catch up.",
+      );
+      expect(
+        text(WitnessTextReason.goneQuiet),
+        "Hey Melanie - I noticed it's been a few days since you checked in. Just wanted to "
+        "reach out and see how you're holding up. Let me know if you have time to connect "
+        'later this week.',
+      );
+      expect(
+        text(WitnessTextReason.gettingStarted),
+        "Hey Melanie, I'm really glad we're doing this together. Whenever you get your "
+        "rhythms set up, I'd love to hear what you landed on so I can be praying for you.",
+      );
+      expect(
+        text(WitnessTextReason.thriving),
+        "Hey Melanie - I saw you had a great week sticking to your Rule of Life. It's really "
+        "encouraging to see. Just wanted to let you know I'm praying for you.",
+      );
+      expect(
+        text(WitnessTextReason.prayed),
+        'Hey Melanie, I just spent some time praying for you and for the things you have '
+        'shared with me. I am with you in this. How can I keep praying this week?',
       );
     });
 
-    test('the quiet text says roughly how long, and a blank name still reads', () {
-      expect(witnessTextFor(WitnessTextReason.goneQuiet, firstName: 'Sam', daysQuiet: 2),
-          contains('a couple of days'));
-      expect(witnessTextFor(WitnessTextReason.goneQuiet, firstName: 'Sam', daysQuiet: 5),
-          contains('5 days'));
-      expect(witnessTextFor(WitnessTextReason.goneQuiet, firstName: 'Sam', daysQuiet: 9),
-          contains('about a week'));
-      expect(witnessTextFor(WitnessTextReason.goneQuiet, firstName: 'Sam', daysQuiet: 40),
-          contains('a while'));
+    test('no draft names a rhythm, and a blank name still reads', () {
+      for (final reason in WitnessTextReason.values) {
+        // The function is not even given a rhythm's title; this pins the
+        // wording that stands in for one.
+        expect(
+          witnessTextFor(reason, firstName: 'Sam').toLowerCase(),
+          isNot(contains('purity')),
+          reason: '$reason',
+        );
+      }
       expect(witnessTextFor(WitnessTextReason.prayed, firstName: '  '), startsWith('Hey friend,'));
     });
   });

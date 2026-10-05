@@ -212,11 +212,7 @@ class _NudgeCard extends StatelessWidget {
         context,
         smsUri(
           runner.phoneNumber!,
-          body: witnessTextFor(
-            nudge.textReason,
-            firstName: runner.firstName,
-            daysQuiet: runner.daysQuiet,
-          ),
+          body: witnessTextFor(nudge.textReason, firstName: runner.firstName),
         ),
         unavailable: 'No messaging app is available on this device.',
       );
