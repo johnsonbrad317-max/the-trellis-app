@@ -99,6 +99,12 @@
 	<string>When you add a meeting to your calendar, the calendar sheet can suggest places and people from your contacts. The Trellis itself never reads your contacts.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>When you add a meeting to your calendar, the calendar sheet can use your current location for the event's place. The Trellis itself never tracks your location.</string>
+	<!-- Prayer photos (image_picker): a Runner can choose a photo from their
+	     library for someone on their prayer list. The system photo picker
+	     hands the app only the one photo chosen; the app never opens the
+	     camera or microphone, so no usage strings are declared for those. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>The Trellis lets you choose a photo for someone on your prayer list.</string>
 	<!-- PostHog: disables the native SDK's own auto-init so it never
 	     configures itself before Dart runs. AnalyticsService.initialize
 	     (lib/services/analytics_service.dart) is the one place the project

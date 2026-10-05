@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import 'corner_vine_background.dart';
+import 'vine_frame.dart';
 
 /// Wraps a bottom navigation bar so the two bottom corner vines frame the
 /// bar itself instead of sitting over page content.
@@ -22,12 +23,20 @@ class BottomVineFrame extends StatelessWidget {
   static const double vineHeight = 76;
   static const double sideInset = 64;
 
+  /// On a phone the vines and the inset shrink with the slimmer bar.
+  static const double phoneVineHeight = 62;
+  static const double phoneSideInset = 54;
+
   @override
   Widget build(BuildContext context) {
+    final phone = MediaQuery.sizeOf(context).width < VineFrame.phoneBreakpoint;
+    final vineHeight = phone ? phoneVineHeight : BottomVineFrame.vineHeight;
+    final sideInset = phone ? phoneSideInset : BottomVineFrame.sideInset;
+
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: sideInset),
+          padding: EdgeInsets.symmetric(horizontal: sideInset),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

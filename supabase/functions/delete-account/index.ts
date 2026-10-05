@@ -12,11 +12,17 @@
 // can only ever result in a still-live account (safe to retry), never a
 // deleted account whose Witness was never told.
 //
+// The person's prayer photos (private `prayer-photos` storage bucket, folder
+// `<user id>/` — migration 021) are removed here too, because deleting the
+// account's database rows does not delete files in storage.
+//
 // What can NOT stop the deletion (Apple requires that deletion actually
 // happens on request): a slow, failing or unconfigured push engine, a failed
-// profile/pairing lookup, or a slow Cronofy. Each of those courtesy steps is
-// best effort and strictly time-boxed (8 s per call, 12 s for all of it, run
-// side by side), then the account is deleted regardless.
+// profile/pairing lookup, a slow Cronofy, or a storage problem while removing
+// photos. Each of those courtesy steps is best effort and strictly time-boxed
+// (8 s per call, 12 s for all of it, run side by side), then the account is
+// deleted regardless. (If photo removal fails, the files are left behind with
+// no owner; 021's verification block has the query that finds them.)
 //
 // Contract with the app (lib/models/runner_profile.dart → deleteAccount):
 //   200 { "deleted": true }           the account is gone
@@ -61,6 +67,12 @@ const COURTESY_BUDGET_MS = 12_000;
 const DELETE_TIMEOUT_MS = 25_000;
 /// Nobody has anywhere near this many Witnesses; it only bounds the fan-out.
 const MAX_WITNESSES = 25;
+/// Where prayer photos live (migration 021): `<user id>/<prayer item id>.jpg`.
+const PHOTO_BUCKET = 'prayer-photos';
+/// Photos are listed and removed this many at a time...
+const PHOTO_PAGE_SIZE = 100;
+/// ...for at most this many pages (1,000 photos), which only bounds the loop.
+const PHOTO_MAX_PAGES = 10;
 
 /// Tells each active Witness, through the same engine the database triggers
 /// use. Never throws; failures are logged and otherwise ignored.
@@ -157,8 +169,67 @@ async function revokeCalendarGrants(admin: SupabaseClient, userId: string): Prom
   }
 }
 
-/// Notify the Witnesses and revoke calendar grants, side by side. Resolves
-/// 'done' whatever happens inside — it never rejects.
+/// The kind of failure only ("StorageApiError", "TimeoutError") — never its
+/// message, which can quote a path.
+function errorClass(error: unknown): string {
+  const name = (error as { name?: unknown } | null)?.name;
+  return typeof name === 'string' && /^[A-Za-z]{1,40}$/.test(name) ? name : 'error';
+}
+
+/// Removes every object in the user's own folder of the prayer-photos bucket
+/// (service role, so storage policies don't apply). Lists the whole folder
+/// first, a page at a time, then removes in batches. Never throws: any storage
+/// failure is logged by error class only and the rest is skipped.
+async function removePrayerPhotos(admin: SupabaseClient, userId: string): Promise<void> {
+  try {
+    const bucket = admin.storage.from(PHOTO_BUCKET);
+
+    const paths: string[] = [];
+    for (let page = 0; page < PHOTO_MAX_PAGES; page++) {
+      const { data, error } = await bucket.list(userId, {
+        limit: PHOTO_PAGE_SIZE,
+        offset: page * PHOTO_PAGE_SIZE,
+        sortBy: { column: 'name', order: 'asc' },
+      });
+      if (error) {
+        // Includes "bucket not found" on a project without migration 021 —
+        // nothing to remove there.
+        console.error('delete-account: could not list prayer photos (continuing):', errorClass(error));
+        break;
+      }
+      const entries = (Array.isArray(data) ? data : []) as Array<{ name?: unknown; id?: unknown }>;
+      for (const entry of entries) {
+        // A null id is a sub-folder placeholder, not a file; the app never
+        // creates one, and there is nothing to remove for it.
+        if (typeof entry.name === 'string' && entry.name.length > 0 && entry.id !== null) {
+          paths.push(`${userId}/${entry.name}`);
+        }
+      }
+      if (entries.length < PHOTO_PAGE_SIZE) break;
+    }
+
+    let failedBatches = 0;
+    let lastFailure = '';
+    for (let start = 0; start < paths.length; start += PHOTO_PAGE_SIZE) {
+      const { error } = await bucket.remove(paths.slice(start, start + PHOTO_PAGE_SIZE));
+      if (error) {
+        failedBatches++;
+        lastFailure = errorClass(error);
+      }
+    }
+    if (failedBatches > 0) {
+      console.error(
+        `delete-account: ${failedBatches} prayer photo removal batch(es) failed (continuing):`,
+        lastFailure,
+      );
+    }
+  } catch (error) {
+    console.error('delete-account: prayer photo cleanup failed (continuing):', errorClass(error));
+  }
+}
+
+/// Notify the Witnesses, revoke calendar grants and remove prayer photos, side
+/// by side. Resolves 'done' whatever happens inside — it never rejects.
 async function courtesySteps(admin: SupabaseClient, supabaseUrl: string, userId: string): Promise<'done'> {
   try {
     const notify = (async () => {
@@ -190,7 +261,11 @@ async function courtesySteps(admin: SupabaseClient, supabaseUrl: string, userId:
       await notifyWitnesses(supabaseUrl, userId, runnerName, witnessIds);
     })();
 
-    const results = await Promise.allSettled([notify, revokeCalendarGrants(admin, userId)]);
+    const results = await Promise.allSettled([
+      notify,
+      revokeCalendarGrants(admin, userId),
+      removePrayerPhotos(admin, userId),
+    ]);
     for (const result of results) {
       if (result.status === 'rejected') {
         console.error('delete-account: a courtesy step failed (continuing):', describeError(result.reason));

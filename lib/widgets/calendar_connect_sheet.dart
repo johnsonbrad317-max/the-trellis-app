@@ -142,6 +142,16 @@ class _CalendarConnectBodyState extends State<_CalendarConnectBody> {
               ),
               const SizedBox(height: 10),
             ],
+            // Family wall calendars (Skylight and the like) have no way for an
+            // app to connect to them directly; they mirror one of the calendars
+            // above, so connecting that one covers them.
+            Text(
+              'Use a Skylight or another family wall calendar? It shows whatever Google, '
+              'Apple or Outlook calendar feeds it — connect that calendar here and your '
+              'Skylight is covered. Meetings you add to it will appear on the Skylight too.',
+              style: textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+            ),
+            const SizedBox(height: 10),
             const SizedBox(height: 6),
             BookplateButton(
               label: 'Done',

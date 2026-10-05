@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../models/rule_of_life_baseline.dart';
 import '../models/runner_profile.dart';
 import '../models/user_role.dart';
 import '../services/supabase_client.dart';
@@ -32,12 +31,16 @@ class RoleSelectionScreen extends StatefulWidget {
     required this.email,
     required this.password,
     required this.name,
+    required this.phoneNumber,
     this.churchCode,
   });
 
   final String email;
   final String password;
   final String name;
+
+  /// The new account's own mobile number, already in international form.
+  final String phoneNumber;
 
   /// A church-gifted code entered at sign-up (Runner path only) — redeemed
   /// once the Runner role is confirmed, injecting that church's DNA
@@ -72,7 +75,9 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     await supabase.auth.signUp(
       email: widget.email,
       password: widget.password,
-      data: {'name': widget.name, 'role': baseRole.dbValue},
+      // 'phone' is copied into the new profile by the database's sign-up
+      // trigger (migration 021).
+      data: {'name': widget.name, 'role': baseRole.dbValue, 'phone': widget.phoneNumber},
     );
 
     // If the Supabase project requires email confirmation, sign-up succeeds
@@ -88,19 +93,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
     final profile = await RunnerProfile.loadCurrent();
     _createdProfile = profile;
-    return profile;
-  }
-
-  /// Seeds "The Essential" so a new Runner lands on a populated Rule of Life.
-  /// Best-effort: the account already exists by now, so a hiccup here must not
-  /// block entering the app — the Rule of Life tab offers the same baselines.
-  Future<void> _seedBaseline(RunnerProfile profile) async {
-    if (profile.ruleItems.isNotEmpty) return;
-    try {
-      await profile.applyRuleOfLifeBaseline(ruleOfLifeBaselines.first.items);
-    } catch (error) {
-      debugPrint('Seeding the starter baseline failed: $error');
+    // Belt and braces for a database whose sign-up trigger doesn't copy the
+    // number yet: save it directly. Best-effort — the account exists, and the
+    // number can be added later under Account & Membership.
+    if (profile.phoneNumber == null) {
+      try {
+        await profile.setPhoneNumber(widget.phoneNumber);
+      } catch (error) {
+        debugPrint('Saving the phone number at sign-up failed: ${error.runtimeType}');
+      }
     }
+    return profile;
   }
 
   @override
@@ -144,8 +147,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
           MaterialPageRoute(builder: (context) => const ChurchDataSharingConsentScreen()),
         );
         // The code is optional, so a bad one never blocks sign-up — but it is
-        // said plainly (the Runner believes they joined their church), and
-        // they start from the same baseline as anyone with no code.
+        // said plainly (the Runner believes they joined their church).
         var joined = false;
         if (consented == true) {
           try {
@@ -162,18 +164,12 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
             );
           }
         }
-        // Declining sharing doesn't mean declining The Trellis — fall back
-        // to the same unaffiliated baseline as no code at all.
-        if (!joined) await _seedBaseline(profile);
-      } else if (role == UserRole.runner) {
-        // No church code means no real DNA Rhythms were just injected —
-        // seed "The Essential" so a brand-new Runner lands on a populated
-        // Rule of Life instead of a blank one. Never fabricated as DNA
-        // Rhythms (is_church_mandated stays false here, same as picking
-        // this baseline manually) — those are meant to represent a real
-        // church's actual requirements, not an arbitrary default.
-        await _seedBaseline(profile);
+        // Declining sharing doesn't mean declining The Trellis: they simply
+        // start, like anyone with no code, from a blank Rule of Life.
       }
+      // No starter rhythms are added here. Every Runner begins with a blank
+      // Rule of Life and chooses a template — or builds their own — on the
+      // Rule of Life tab; nothing counts until they commit to it.
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -230,7 +226,6 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       // Invalid code: the account still exists (as a plain Runner) rather
       // than being stranded — they can redeem a valid code later from the
       // role switcher, same recovery path as settings_witnesses.dart.
-      await _seedBaseline(profile);
       if (!mounted) return;
       // A notice, not this screen's inline error: the screen is replaced on
       // the very next line, and the notice (on the root overlay) is what

@@ -32,7 +32,7 @@ class NavIcon extends StatelessWidget {
   final NavGlyph glyph;
   final bool selected;
 
-  static const double size = 44;
+  static const double size = 36;
 
   @override
   Widget build(BuildContext context) {

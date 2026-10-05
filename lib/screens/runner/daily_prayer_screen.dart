@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../../models/prayer_item.dart';
 import '../../models/runner_profile.dart';
-import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_app_bar.dart';
 import '../../widgets/bookplate_dialog.dart';
-import '../../widgets/bookplate_plate.dart';
-import '../../widgets/brass_glyph.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/launch_link.dart';
+import '../../widgets/prayer_card.dart';
 import '../../widgets/prayer_completion_view.dart';
 import '../../widgets/trellis_scaffold.dart';
 
 /// A swipeable flashcard walk-through of today's prayer queue. Swipe a card
-/// away, or tap "Mark as Prayed Today", to move to the next one.
+/// away, or tap "Mark as Prayed Today", to move to the next one. Each card is
+/// a [PrayerCard] — the framed devotional bookplate with the person's photo
+/// or initials.
 class DailyPrayerScreen extends StatefulWidget {
   const DailyPrayerScreen({super.key, required this.profile, required this.queue});
 
@@ -32,6 +32,9 @@ class _DailyPrayerScreenState extends State<DailyPrayerScreen> {
   /// know" text offer moves here, to the end-of-session summary, instead of
   /// interrupting with a dialog after every single card.
   final List<PrayerItem> _prayedForWithPhone = [];
+
+  /// How far each waiting card's top edge shows above the card in front.
+  static const _peek = 10.0;
 
   void _markPrayed(PrayerItem item) {
     // The card moves on at once; if the save fails the Runner is told, since
@@ -97,29 +100,56 @@ class _DailyPrayerScreenState extends State<DailyPrayerScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  height: 360,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      for (var i = (_remaining.length - 1).clamp(0, 2); i >= 0; i--)
-                        if (i == 0)
-                          Dismissible(
-                            key: ValueKey(_remaining[i].id),
-                            direction: DismissDirection.horizontal,
-                            onDismissed: (_) => _markPrayed(_remaining[i]),
-                            child: _PrayerCard(item: _remaining[i]),
-                          )
-                        else
-                          Transform.translate(
-                            offset: Offset(0, -8.0 * i),
-                            child: Transform.scale(
-                              scale: 1 - (0.04 * i),
-                              child: _PrayerCard(item: _remaining[i], faded: true),
-                            ),
-                          ),
-                    ],
-                  ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    // The card takes the width it is given (up to a readable
+                    // 340) and about half the screen's height: on a small
+                    // phone the count, the card and the button still fit
+                    // without the page scrolling, and a tall phone is not left
+                    // mostly empty. Long prayers scroll inside the card.
+                    final cardWidth = constraints.maxWidth < 340 ? constraints.maxWidth : 340.0;
+                    final cardHeight =
+                        (MediaQuery.sizeOf(context).height * 0.52).clamp(340.0, 440.0).toDouble();
+
+                    return SizedBox(
+                      // Room above the top card for the two behind it to show.
+                      height: cardHeight + 2 * _peek,
+                      child: Stack(
+                        alignment: Alignment.bottomCenter,
+                        children: [
+                          for (var i = (_remaining.length - 1).clamp(0, 2); i >= 0; i--)
+                            if (i == 0)
+                              Dismissible(
+                                key: ValueKey(_remaining[i].id),
+                                direction: DismissDirection.horizontal,
+                                onDismissed: (_) => _markPrayed(_remaining[i]),
+                                child: SizedBox(
+                                  width: cardWidth,
+                                  height: cardHeight,
+                                  child: PrayerCard(item: _remaining[i]),
+                                ),
+                              )
+                            else
+                              // Each waiting card is a little smaller and
+                              // lifted so its top edge shows above the one in
+                              // front. (Scaling shrinks a card toward its
+                              // centre, which lowers its top edge by half of
+                              // what it lost — hence the second term.)
+                              Transform.translate(
+                                offset: Offset(0, -(_peek * i + cardHeight * 0.02 * i)),
+                                child: Transform.scale(
+                                  scale: 1 - (0.04 * i),
+                                  child: SizedBox(
+                                    width: cardWidth,
+                                    height: cardHeight,
+                                    child: PrayerCard(item: _remaining[i], faded: true),
+                                  ),
+                                ),
+                              ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 24),
                 Center(
@@ -130,61 +160,6 @@ class _DailyPrayerScreenState extends State<DailyPrayerScreen> {
                 ),
               ],
             ),
-    );
-  }
-}
-
-class _PrayerCard extends StatelessWidget {
-  const _PrayerCard({required this.item, this.faded = false});
-
-  final PrayerItem item;
-  final bool faded;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return Opacity(
-      opacity: faded ? 0.5 : 1,
-      child: SizedBox(
-        width: 300,
-        height: 340,
-        child: BookplatePlate(
-          padding: const EdgeInsets.all(24),
-          emphasized: true,
-          // The card is a fixed size, but a prayer's details are free text:
-          // still centred when short, and scrollable (never overflowing the
-          // card) when long or when the text size is set large.
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  BrassGlyph(item.category.glyph, size: 32, color: AppColors.forestGreen),
-                  const SizedBox(height: 16),
-                  Text(item.title, style: textTheme.headlineSmall),
-                  if (item.details.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(item.details, style: textTheme.bodyMedium),
-                  ],
-                  if (item.scripture != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      item.scripture!,
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: AppColors.antiqueBrass,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

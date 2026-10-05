@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/analytics_service.dart';
+import '../services/local_reminders.dart';
+import '../services/prayer_photo_service.dart';
 import '../services/push_notifications.dart';
 import '../services/purchases_service.dart';
 import '../services/supabase_client.dart';
@@ -76,38 +78,49 @@ const _profileColumns = 'id, name, email, role, membership_status, church_id, '
     'prayer_reminder_time, has_completed_scheduling_setup, calendar_connected, '
     'cloud_admin_church_id';
 
-enum NotificationCategory { anchorRhythmAlerts, weeklyRollUp, meetingRequests, prayerReminders }
+enum NotificationCategory {
+  checkInReminder,
+  prayerReminders,
+  anchorRhythmAlerts,
+  weeklyRollUp,
+  meetingRequests,
+}
 
 extension NotificationCategoryLabel on NotificationCategory {
   String get label => switch (this) {
+        NotificationCategory.checkInReminder => 'Daily check-in reminder',
+        NotificationCategory.prayerReminders => 'Prayer list reminder',
         NotificationCategory.anchorRhythmAlerts => 'Anchor Rhythm alerts',
-        NotificationCategory.weeklyRollUp => 'Weekly roll-up to Witnesses',
+        NotificationCategory.weeklyRollUp => 'Weekly roll-up from my Runners',
         NotificationCategory.meetingRequests => 'Meeting & prayer requests',
-        NotificationCategory.prayerReminders => 'Prayer list reminders',
       };
 
   /// Whether this category is relevant to `role` — the Notification
   /// Settings screen only renders toggles that apply to the active role.
   bool visibleForRole(UserRole role) => switch (this) {
+        // A Runner's own reminders, sent by this phone at the times they chose
+        // (LocalReminders) — the only two a Runner can switch off.
+        NotificationCategory.checkInReminder => role == UserRole.runner,
+        NotificationCategory.prayerReminders => role == UserRole.runner,
         // A Witness is the one alerted when their Runner misses an Anchor
         // Rhythm — the Runner isn't notified about their own miss this way.
         NotificationCategory.anchorRhythmAlerts => role == UserRole.witness,
-        // Whether a Runner's own weekly roll-up goes out to their
-        // Witness(es) is the Runner's call.
-        NotificationCategory.weeklyRollUp => role == UserRole.runner,
+        // The weekly roll-up is the WITNESS's to mute. A Runner cannot stop
+        // their own roll-up going out — that would defeat the point of having
+        // a Witness.
+        NotificationCategory.weeklyRollUp => role == UserRole.witness,
         // Both Runner and Witness send/receive meeting proposals.
         NotificationCategory.meetingRequests => role != UserRole.cloud,
-        // A Runner's own prayer-list reminders.
-        NotificationCategory.prayerReminders => role == UserRole.runner,
       };
 }
 
 extension NotificationCategoryDb on NotificationCategory {
   String get dbKey => switch (this) {
+        NotificationCategory.checkInReminder => 'check_in_reminder',
+        NotificationCategory.prayerReminders => 'prayer_reminders',
         NotificationCategory.anchorRhythmAlerts => 'anchor_rhythm_alerts',
         NotificationCategory.weeklyRollUp => 'weekly_roll_up',
         NotificationCategory.meetingRequests => 'meeting_requests',
-        NotificationCategory.prayerReminders => 'prayer_reminders',
       };
 }
 
@@ -170,6 +183,8 @@ class RunnerProfile extends ChangeNotifier {
     required this.ruleItems,
     required this.dailyCheckInReminder,
     required this.hasCommittedRule,
+    this.ruleCommittedAt,
+    this.phoneNumber,
     required this.consumerHealthDataConsent,
     required this.checkInHistory,
     required this.prayerReminderTime,
@@ -213,6 +228,7 @@ class RunnerProfile extends ChangeNotifier {
 
     final notificationPrefsJson =
         profileRow['notification_preferences'] as Map<String, dynamic>? ?? const {};
+    final optional = await _fetchOptionalProfileFields(userId);
 
     // Fire-and-forget: registering a device token (and the permission
     // prompt that can come with it) has no business blocking cold boot —
@@ -246,6 +262,8 @@ class RunnerProfile extends ChangeNotifier {
       ruleItems: [for (final row in ruleItemRows) RuleItem.fromRow(row)],
       dailyCheckInReminder: _timeFromDb(profileRow['daily_check_in_reminder'] as String),
       hasCommittedRule: profileRow['has_committed_rule'] as bool? ?? false,
+      ruleCommittedAt: optional.ruleCommittedAt,
+      phoneNumber: optional.phoneNumber,
       consumerHealthDataConsent: profileRow['consumer_health_data_consent'] as bool? ?? false,
       checkInHistory: CheckInEntry.fromRows(List<Map<String, dynamic>>.from(checkInRows)),
       prayerReminderTime: _timeFromDb(profileRow['prayer_reminder_time'] as String),
@@ -280,6 +298,30 @@ class RunnerProfile extends ChangeNotifier {
         .select('$_profileColumns, church:church_id(name)')
         .eq('id', userId)
         .single();
+  }
+
+  /// Columns newer than the oldest database this build must still open
+  /// against, each read on its own so that a column that isn't there yet
+  /// (migration 021 not applied) costs only that one value — never sign-in.
+  static Future<({String? phoneNumber, DateTime? ruleCommittedAt})> _fetchOptionalProfileFields(
+    String userId,
+  ) async {
+    Future<Object?> read(String column) async {
+      try {
+        final row = await supabase.from('profiles').select(column).eq('id', userId).single();
+        return row[column];
+      } catch (error) {
+        debugPrint('profiles.$column unavailable: ${error.runtimeType}');
+        return null;
+      }
+    }
+
+    final phone = await read('phone_number');
+    final committedAt = await read('rule_committed_at');
+    return (
+      phoneNumber: phone is String && phone.trim().isNotEmpty ? phone.trim() : null,
+      ruleCommittedAt: committedAt is String ? DateTime.tryParse(committedAt)?.toLocal() : null,
+    );
   }
 
   /// Home/work address, which the database withholds from every direct read
@@ -344,6 +386,18 @@ class RunnerProfile extends ChangeNotifier {
   final List<RuleItem> ruleItems;
   TimeOfDay dailyCheckInReminder;
   bool hasCommittedRule;
+
+  /// When the Rule of Life was committed (stamped by the database, migration
+  /// 021). Starts the first-week settle period — see [isRuleItemSet] — and is
+  /// the day after which a Witness starts seeing missed days. Null if not
+  /// committed, or on a database that doesn't record it yet.
+  DateTime? ruleCommittedAt;
+
+  /// This person's own mobile number in international form (`+1…`), asked
+  /// for at sign-up. Shown to the people they are paired with — their
+  /// Witnesses, and the Runners they walk with — so those people can text
+  /// them. Null for an account created before it was asked for.
+  String? phoneNumber;
 
   /// True once this account agreed to the Terms of Service/Privacy
   /// Policy/Consumer Health Data Notice checkbox on
@@ -458,6 +512,10 @@ class RunnerProfile extends ChangeNotifier {
   bool _supportRequestsSubscribed = false;
 
   bool _runnerDataLoaded = false;
+
+  /// Whether this account's own Runner-side lists (Witnesses, prayers,
+  /// meetings) have loaded — until then an empty list is not yet a fact.
+  bool get isRunnerDataLoaded => _runnerDataLoaded;
   bool _witnessDataLoaded = false;
   bool _cloudDataLoaded = false;
   bool _unlockRequestsSubscribed = false;
@@ -573,6 +631,9 @@ class RunnerProfile extends ChangeNotifier {
       for (final item in ruleItems) {
         if (item.id == ruleItemId) {
           item.isChurchMandated = false;
+          // The approval opens the rhythm for a day (the database sets the
+          // real deadline; this matches it closely enough for the screen).
+          item.unlockedUntil = DateTime.now().add(ruleUnlockWindow);
           break;
         }
       }
@@ -749,16 +810,42 @@ class RunnerProfile extends ChangeNotifier {
     final pairingRows = await supabase
         .from('witness_pairings')
         .select(
-          'runner:profiles!runner_id(id, name, phone_number, '
+          'runner:profiles!runner_id(id, name, phone_number, has_committed_rule, '
           'accountability_lock_enabled, accountability_lock_removal_pending)',
         )
         .eq('witness_id', id)
         .eq('status', 'active');
 
+    // When each Runner committed their Rule of Life. Asked for separately and
+    // fail-soft: the column arrives with migration 021, and without it the
+    // Runners must still load (a committed Runner is then simply treated as
+    // having committed long ago, as before).
+    final committedAtByRunner = <String, DateTime>{};
+    try {
+      final runnerIds = [
+        for (final pairing in pairingRows) (pairing['runner'] as Map<String, dynamic>)['id'] as String,
+      ];
+      if (runnerIds.isNotEmpty) {
+        final rows = await supabase
+            .from('profiles')
+            .select('id, rule_committed_at')
+            .inFilter('id', runnerIds);
+        for (final row in rows) {
+          final value = row['rule_committed_at'];
+          final parsed = value is String ? DateTime.tryParse(value) : null;
+          if (parsed != null) committedAtByRunner[row['id'] as String] = parsed.toUtc();
+        }
+      }
+    } catch (error) {
+      debugPrint('rule_committed_at unavailable: ${error.runtimeType}');
+    }
+
     final built = <WatchedRunner>[];
     for (final pairing in pairingRows) {
       final runnerRow = pairing['runner'] as Map<String, dynamic>;
       final runnerId = runnerRow['id'] as String;
+      final hasCommittedRule = runnerRow['has_committed_rule'] as bool? ?? false;
+      final committedAt = committedAtByRunner[runnerId];
 
       final ruleItemRows = await supabase.from('rule_items').select().eq('runner_id', runnerId);
 
@@ -796,17 +883,21 @@ class RunnerProfile extends ChangeNotifier {
               c['check_in_date'] as String: c['answered_yes'] as bool,
         };
         // A dense, always-7-element array (referenceDate-6 .. referenceDate).
-        // A day this rhythm wasn't even scheduled for (e.g. a Wed/Fri-only
-        // fast on a Tuesday) is `null` — no obligation existed, so it's
-        // neither a hit nor a miss. Only a day it WAS due and has no
-        // check-in row reads as "not done" (false) — see
-        // WatchedRuleItem.weekCompletion.
+        // A day with no obligation is `null` — neither a hit nor a miss:
+        // the rhythm wasn't scheduled that day (e.g. a Wed/Fri-only fast on
+        // a Tuesday), or it didn't count yet (see [missedDayCounts]). A day
+        // the Runner actually answered always shows as answered. Only a day
+        // that WAS due, counted, and has no check-in reads as "not done"
+        // (false) — see WatchedRuleItem.weekCompletion.
         final weekCompletion = <bool?>[
           for (var i = 6; i >= 0; i--)
-            if (!ruleItem.scheduledFor(referenceDate.subtract(Duration(days: i))))
-              null
-            else
-              byDate[_dateOnly(referenceDate.subtract(Duration(days: i)))] ?? false,
+            _watchedDayStatus(
+              ruleItem,
+              referenceDate.subtract(Duration(days: i)),
+              answered: byDate[_dateOnly(referenceDate.subtract(Duration(days: i)))],
+              hasCommittedRule: hasCommittedRule,
+              committedAt: committedAt,
+            ),
         ];
         final scheduledDays = weekCompletion.whereType<bool>().toList();
         watchedRuleItems.add(WatchedRuleItem(
@@ -862,14 +953,6 @@ class RunnerProfile extends ChangeNotifier {
         }
       }
 
-      String? missedAnchorAlert;
-      for (final item in watchedRuleItems) {
-        if (item.isAnchorRhythm && item.missedYesterday) {
-          missedAnchorAlert = 'Missed "${item.title}" yesterday.';
-          break;
-        }
-      }
-
       final checkInDates = [
         for (final c in checkInRows) DateTime.parse(c['check_in_date'] as String),
       ];
@@ -894,6 +977,8 @@ class RunnerProfile extends ChangeNotifier {
         id: runnerId,
         name: runnerRow['name'] as String,
         phoneNumber: runnerRow['phone_number'] as String?,
+        hasCommittedRule: hasCommittedRule,
+        ruleCommittedAt: committedAt?.toLocal(),
         // A request only means something while the lock is actually on.
         lockRemovalRequested: (runnerRow['accountability_lock_enabled'] as bool? ?? false) &&
             (runnerRow['accountability_lock_removal_pending'] as bool? ?? false),
@@ -906,7 +991,6 @@ class RunnerProfile extends ChangeNotifier {
         pendingMeetings: pending,
         confirmedMeetings: confirmed,
         lastCheckInDate: lastCheckIn,
-        missedAnchorAlert: missedAnchorAlert,
         referenceDate: referenceDate,
       ));
     }
@@ -952,6 +1036,66 @@ class RunnerProfile extends ChangeNotifier {
 
     _ensureUnlockRequestsSubscribed();
     notifyListeners();
+  }
+
+  /// Whether an unanswered, scheduled [day] counts as a miss for a Witness.
+  ///
+  /// Nothing counts until the Runner has committed their Rule of Life — a
+  /// draft is not a promise — and then only from the day AFTER they committed,
+  /// and never before the rhythm itself existed. (Dates are compared as UTC
+  /// calendar days, the same way the database does it in migration 021.)
+  /// [committedAt] null with [hasCommittedRule] true means "committed, date
+  /// not recorded" (an older database): everything counts, as it used to.
+  ///
+  /// Nor does a day count while the Runner can still report on it: the daily
+  /// check-in looks back on YESTERDAY, so yesterday stays open all of today.
+  /// Until today is over, an unanswered yesterday is "not reported yet", not
+  /// a miss — otherwise every Runner would look like they had missed their
+  /// Anchor each morning until they opened the app.
+  @visibleForTesting
+  static bool missedDayCounts(
+    DateTime day, {
+    required bool hasCommittedRule,
+    required DateTime? committedAt,
+    required DateTime? rhythmCreatedAt,
+    DateTime? now,
+  }) {
+    if (!hasCommittedRule) return false;
+    final date = DateTime.utc(day.year, day.month, day.day);
+    final today = now ?? DateTime.now();
+    final yesterday = DateTime.utc(today.year, today.month, today.day - 1);
+    if (!date.isBefore(yesterday)) return false;
+    if (committedAt != null) {
+      final committed = committedAt.toUtc();
+      final firstCountedDay = DateTime.utc(committed.year, committed.month, committed.day + 1);
+      if (date.isBefore(firstCountedDay)) return false;
+    }
+    if (rhythmCreatedAt != null) {
+      final created = rhythmCreatedAt.toUtc();
+      if (date.isBefore(DateTime.utc(created.year, created.month, created.day))) return false;
+    }
+    return true;
+  }
+
+  /// One cell of a watched rhythm's week: null = nothing was due, true/false =
+  /// kept / missed. See [missedDayCounts].
+  static bool? _watchedDayStatus(
+    RuleItem item,
+    DateTime day, {
+    required bool? answered,
+    required bool hasCommittedRule,
+    required DateTime? committedAt,
+  }) {
+    if (!item.scheduledFor(day)) return null;
+    if (answered != null) return answered;
+    return missedDayCounts(
+      day,
+      hasCommittedRule: hasCommittedRule,
+      committedAt: committedAt,
+      rhythmCreatedAt: item.createdAt,
+    )
+        ? false
+        : null;
   }
 
   /// A separate Realtime channel from the unlock-request one, so a database
@@ -1438,11 +1582,10 @@ class RunnerProfile extends ChangeNotifier {
     unawaited(refreshAnalytics());
   }
 
-  /// Asks [witnessId] for permission to unlock a DNA Rhythm (a
-  /// church-mandated [RuleItem]) so it can be edited or removed like any
-  /// other rhythm. The caller (rule_builder_screen.dart) is responsible
-  /// for picking which of this account's Witnesses to ask — this only
-  /// persists the request.
+  /// Asks [witnessId] for permission to unlock a rhythm — a church-mandated
+  /// DNA Rhythm, or any rhythm that has become set ([isRuleItemSet]) — so it
+  /// can be edited or removed. The caller (rule_builder_screen.dart) picks
+  /// which of this account's Witnesses to ask; this only persists the request.
   Future<void> requestRuleItemUnlock(String ruleItemId, String witnessId) async {
     final wasPending = pendingUnlockRuleItemIds.contains(ruleItemId);
     pendingUnlockRuleItemIds.add(ruleItemId);
@@ -1512,9 +1655,45 @@ class RunnerProfile extends ChangeNotifier {
   Future<String> commitRuleOfLife() async {
     final code = await generatePairingCode();
     hasCommittedRule = true;
+    // The database stamps the real time (and is what enforces the settle
+    // period); this keeps the screen right until it is read back just below.
+    ruleCommittedAt ??= DateTime.now();
     notifyListeners();
     await supabase.from('profiles').update({'has_committed_rule': true}).eq('id', id);
+    final optional = await _fetchOptionalProfileFields(id);
+    if (optional.ruleCommittedAt != null) {
+      ruleCommittedAt = optional.ruleCommittedAt;
+      notifyListeners();
+    }
     return code;
+  }
+
+  /// Saves this person's own mobile number. [number] must already be in
+  /// international form (see normalizePhoneNumber in models/phone_number.dart).
+  Future<void> setPhoneNumber(String number) async {
+    await supabase.from('profiles').update({'phone_number': number}).eq('id', id);
+    phoneNumber = number;
+    notifyListeners();
+  }
+
+  /// Whether [item] is "set": the first-week settle period has passed and a
+  /// Witness must approve before it can be changed or removed. Mirrors the
+  /// rule the database enforces (migration 021), so the screen never offers
+  /// an edit the server would refuse. See [RuleItem.isSetAt].
+  bool isRuleItemSet(RuleItem item) => hasCommittedRule &&
+      item.isSetAt(
+        DateTime.now(),
+        ruleCommittedAt: ruleCommittedAt,
+        hasWitness: witnesses.isNotEmpty,
+      );
+
+  /// The last moment the whole Rule of Life can still be adjusted freely, or
+  /// null once that has passed (or before committing).
+  DateTime? get ruleSettlesAt {
+    final committedAt = ruleCommittedAt;
+    if (!hasCommittedRule || committedAt == null) return null;
+    final settles = committedAt.add(ruleSettlePeriod);
+    return settles.isAfter(DateTime.now()) ? settles : null;
   }
 
   /// Persists the Tier 1 MHMDA collection consent already given on
@@ -1573,9 +1752,41 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> removePrayerItem(String id) async {
+    // Looked up before the row goes: once the prayer is deleted, nothing else
+    // remembers where its photo was stored.
+    String? photoPath;
+    for (final item in prayerItems) {
+      if (item.id == id) photoPath = item.photoPath;
+    }
     await supabase.from('prayer_items').delete().eq('id', id);
     prayerItems.removeWhere((item) => item.id == id);
     notifyListeners();
+    if (photoPath != null) unawaited(_deletePrayerPhoto(photoPath));
+  }
+
+  /// Records where a prayer's photo is stored (see PrayerPhotoService, which
+  /// does the uploading) — or, with null, that it no longer has one.
+  Future<void> setPrayerPhoto(String id, String? photoPath) async {
+    await supabase.from('prayer_items').update({'photo_path': photoPath}).eq('id', id);
+    for (final item in prayerItems) {
+      if (item.id == id) {
+        item.photoPath = photoPath;
+        break;
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Deletes a removed prayer's photo from the private bucket. Best-effort: a
+  /// photo left behind is private and harmless, so a failed clean-up must
+  /// never make removing the prayer itself look as if it failed.
+  Future<void> _deletePrayerPhoto(String path) async {
+    try {
+      await supabase.storage.from(prayerPhotoBucket).remove([path]);
+    } catch (error) {
+      // The error's class only — its text can carry the path.
+      debugPrint('Prayer photo clean-up failed: ${error.runtimeType}');
+    }
   }
 
   Future<void> setPrayerAnswered(String id, bool answered) async {
@@ -1993,6 +2204,9 @@ class RunnerProfile extends ChangeNotifier {
     }
     await supabase.auth.signOut();
     current = null;
+    // This phone's reminders belong to the account that set them.
+    unawaited(LocalReminders.cancelAll());
+    PrayerPhotoService.instance.clear();
     // After this, events captured for whoever signs in next (or an
     // anonymous session) must never be attributed back to this account.
     unawaited(AnalyticsService.reset());
@@ -2017,6 +2231,8 @@ class RunnerProfile extends ChangeNotifier {
       // Nothing to revoke — the user no longer exists.
     }
     current = null;
+    unawaited(LocalReminders.cancelAll());
+    PrayerPhotoService.instance.clear();
     unawaited(AnalyticsService.reset());
   }
 }

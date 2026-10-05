@@ -52,6 +52,7 @@ class NotificationRouter {
       case 'unlock_request':
       case 'grace_nudge':
       case 'support_request':
+      case 'weekly_roll_up':
         // Only ever sent to a Witness — land on their Runners tab with the
         // relevant Runner already selected (a support request also shows in
         // that tab's "Requests for You" list).

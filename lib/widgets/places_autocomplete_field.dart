@@ -132,6 +132,7 @@ class _PlacesAutocompleteFieldState extends State<PlacesAutocompleteField> {
       children: [
         TextField(
           controller: widget.controller,
+          textCapitalization: TextCapitalization.words,
           onChanged: _onChanged,
           decoration: InputDecoration(
             labelText: widget.labelText,

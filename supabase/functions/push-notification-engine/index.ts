@@ -2,15 +2,19 @@
 // =============================================================================
 // The single Edge Function behind every push notification this app sends.
 // Triggered by database triggers (see supabase/migrations/004_universal_
-// webhooks.sql, hardened in 011, extended in 014), one per relational loop,
-// plus one direct call from another Edge Function:
-//   - unlock_request    a Runner asks a Witness to unlock a DNA Rhythm
-//                       (pending_unlock_requests insert)
+// webhooks.sql, hardened in 011, extended in 014 and 021), one per relational
+// loop, plus one direct call from another Edge Function:
+//   - unlock_request    a Runner asks a Witness to unlock a rhythm in their
+//                       Rule of Life — a church (DNA) rhythm, or any rhythm
+//                       that has become "set" (pending_unlock_requests insert)
 //   - grace_nudge       a Runner's Anchor Rhythm just crossed three
 //                       consecutive misses (grace_nudges insert)
 //   - meeting_proposal  either side proposes a meeting (meetings insert)
 //   - support_request   a Runner asks a Witness for prayer or a meeting
 //                       (support_requests insert, one row per Witness)
+//   - weekly_roll_up    a Witness's weekly summary of one Runner: how many
+//                       rhythm-days were kept (weekly_roll_ups insert, written
+//                       every Monday by generate_weekly_roll_ups() — 021)
 //   - account_deleted   called directly by delete-account/ (not a DB
 //                       trigger — nothing is inserted for this one) right
 //                       before it deletes the Runner's account, so their
@@ -91,6 +95,7 @@ const EVENT_TYPES = [
   'meeting_proposal',
   'account_deleted',
   'support_request',
+  'weekly_roll_up',
 ] as const;
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -149,7 +154,21 @@ function validateRecord(eventType: EventType, record: Record<string, unknown>): 
       return need('id', 'runner_id', 'witness_id');
     case 'account_deleted':
       return need('runner_id', 'witness_id');
+    case 'weekly_roll_up': {
+      const badId = need('id', 'runner_id', 'witness_id');
+      if (badId) return badId;
+      const scheduled = record.rhythms_scheduled;
+      const kept = record.rhythms_kept;
+      if (!isCount(scheduled) || scheduled < 1) return 'rhythms_scheduled';
+      if (!isCount(kept) || kept > scheduled) return 'rhythms_kept';
+      return null;
+    }
   }
+}
+
+/// A whole, non-negative, sensibly small number (a week's rhythm-days).
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100_000;
 }
 
 /// A single clean line of bounded length for a notification title/body part.
@@ -188,15 +207,15 @@ async function resolveUnlockRequest(
   const witnessId = record.witness_id as string;
   const ruleItemId = record.rule_item_id as string;
 
-  const [runnerName, title] = await Promise.all([
-    profileName(supabase, runnerId),
-    ruleItemTitle(supabase, ruleItemId),
-  ]);
+  // Any rhythm can be the subject now (not only a church one), so the message
+  // names neither the rhythm nor its kind — a personal rhythm's title does not
+  // belong on a lock screen. The app shows which rhythm once it is opened.
+  const runnerName = await profileName(supabase, runnerId);
 
   return [{
     profileId: witnessId,
     title: 'Unlock Request',
-    body: `${runnerName ?? 'A Runner'} is requesting to unlock "${title ?? 'a DNA Rhythm'}".`,
+    body: `${runnerName ?? 'A Runner'} is asking you to unlock a rhythm in their Rule of Life.`,
     data: {
       type: 'unlock_request',
       requestId: record.id as string,
@@ -306,6 +325,32 @@ async function resolveSupportRequest(
   }];
 }
 
+/// A Witness's weekly roll-up of one Runner (weekly_roll_ups insert — one row,
+/// hence one notification, per Runner/Witness pair). Two numbers only: never a
+/// rhythm's name. Honors the Witness's "Weekly roll-up" preference.
+async function resolveWeeklyRollUp(
+  supabase: SupabaseClient,
+  record: Record<string, unknown>,
+): Promise<NotificationJob[]> {
+  const runnerId = record.runner_id as string;
+  const witnessId = record.witness_id as string;
+  const kept = record.rhythms_kept as number;
+  const scheduled = record.rhythms_scheduled as number;
+
+  const runnerName = await profileName(supabase, runnerId);
+  const firstName = clean(runnerName?.split(/\s+/)[0], 40) ?? 'A Runner you walk with';
+
+  return [{
+    profileId: witnessId,
+    title: 'Weekly roll-up',
+    body: `${firstName} kept ${kept} of ${scheduled} rhythms last week.`,
+    // runnerId is what the app's notification router reads for every event;
+    // runner_id carries the same value under the database's column name.
+    data: { type: 'weekly_roll_up', runnerId, runner_id: runnerId },
+    preference: 'weekly_roll_up',
+  }];
+}
+
 function resolveAccountDeleted(
   _supabase: SupabaseClient,
   record: Record<string, unknown>,
@@ -331,6 +376,7 @@ const RESOLVERS: Record<
   meeting_proposal: resolveMeetingProposal,
   account_deleted: resolveAccountDeleted,
   support_request: resolveSupportRequest,
+  weekly_roll_up: resolveWeeklyRollUp,
 };
 
 // ---------------------------------------------------------------------------

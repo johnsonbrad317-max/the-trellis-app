@@ -53,12 +53,15 @@ class _WitnessPrayerScreenState extends State<WitnessPrayerScreen> {
           TextField(
             controller: titleController,
             autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.next,
             decoration: const InputDecoration(labelText: 'Title'),
           ),
           const SizedBox(height: 16),
           TextField(
             controller: detailsController,
             maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(labelText: 'Details (optional)'),
           ),
           if (error != null) ...[

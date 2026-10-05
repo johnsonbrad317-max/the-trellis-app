@@ -7,6 +7,14 @@
     <!-- Push Notifications: required at runtime on Android 13+ (API 33+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Local reminders (flutter_local_notifications): Android drops an app's
+         alarms when the device restarts, so the plugin needs to hear about a
+         reboot to put the scheduled daily check-in and prayer reminders back
+         (ScheduledNotificationBootReceiver, below). A normal install-time
+         permission: the user is never prompted. No exact-alarm or full-screen
+         permission is declared on purpose; reminders use inexact alarms. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
     <!-- Deliberately NOT declared (least privilege; each one must be justified
          in Google Play's Data safety form and is shown on the store listing):
            * READ_CALENDAR / WRITE_CALENDAR: add_2_calendar hands the event to
@@ -64,6 +72,21 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_stat_trellis" />
+        <!-- Local reminders (flutter_local_notifications, driven by
+             lib/services/local_reminders.dart). The first receiver shows a
+             scheduled reminder when its alarm goes off; the second puts the
+             pending reminders back after a reboot or an app update, both of
+             which clear alarms. Taken as-is from the plugin's README; neither
+             is exported. -->
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Package visibility (Android 11 / API 30+). Without these entries

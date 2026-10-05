@@ -44,6 +44,10 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Core library desugaring: required by flutter_local_notifications
+        // (local reminders), which uses java.time to schedule notifications.
+        // Pairs with the coreLibraryDesugaring dependency at the end of this file.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -62,6 +66,9 @@ android {
         // `flutter build --build-number / --build-name` (what codemagic.yaml passes).
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Asked for by flutter_local_notifications' Gradle setup, alongside
+        // core library desugaring (see compileOptions above).
+        multiDexEnabled = true
     }
 
     signingConfigs {
@@ -140,4 +147,10 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // The desugared JDK library that isCoreLibraryDesugaringEnabled (above)
+    // needs; the version is the one flutter_local_notifications 22.3.1 documents.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

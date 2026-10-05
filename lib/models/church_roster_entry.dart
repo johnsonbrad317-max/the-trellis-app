@@ -99,9 +99,13 @@ class ChurchRosterEntry {
 
   bool get isUnpaired => witnesses.isEmpty;
 
-  /// A Runner who hasn't checked in for over a week — the Roster's
-  /// "Dormant Vines" filter.
-  bool get isDormant => daysSinceLastCheckIn > 7;
+  /// Never checked in at all (stored as a 999-day gap): not yet started,
+  /// which is a different thing from having gone quiet.
+  bool get hasNeverCheckedIn => daysSinceLastCheckIn >= 999;
+
+  /// A Runner who WAS checking in and hasn't for over a week — the Roster's
+  /// "Dormant Vines" filter. Someone still setting up is not dormant.
+  bool get isDormant => daysSinceLastCheckIn > 7 && !hasNeverCheckedIn;
 
   VineStatus get vineStatus {
     if (vitalityScore >= 0.75) return VineStatus.fullBloom;

@@ -251,10 +251,16 @@ class _BookplatePanel extends StatelessWidget {
         padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
+        // A little clear parchment-veil above the panel even when its content is
+        // tall and scrolled: without it the panel's top edge slid right up
+        // under the status bar / Dynamic Island.
         child: SafeArea(
+        minimum: const EdgeInsets.only(top: 12),
+        child: Padding(
+        padding: const EdgeInsets.only(top: 10),
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               // An invisible Material ancestor: paints nothing, but supplies
@@ -319,6 +325,7 @@ class _BookplatePanel extends StatelessWidget {
               ),
             ),
           ),
+        ),
         ),
         ),
       ),

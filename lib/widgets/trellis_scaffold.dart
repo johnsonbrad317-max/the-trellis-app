@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
-import 'corner_vine_background.dart';
-import 'vine_safe_app_bar.dart';
+import 'vine_frame.dart';
 
-/// Shared scaffold applying the solid parchment background and corner vine
-/// illustrations. The body is always wrapped in a [SingleChildScrollView] so
-/// a focused text field never causes a keyboard overflow, per the app-wide
-/// layout rule.
+/// The scaffold for every pushed screen: parchment, corner vines and a header
+/// that slides away on scroll (all from [VineFrame]), with the body always in
+/// a scroll view so a focused text field can never cause a keyboard overflow.
+///
+/// The body scrolls the full height of the screen — under the header's soft
+/// edge at the top, and over the bottom vines at the bottom — instead of being
+/// boxed into a band between them. Padding at the end of the scroll lets the
+/// last line come to rest above the bottom vines.
 class TrellisScaffold extends StatelessWidget {
   const TrellisScaffold({
     super.key,
@@ -24,29 +26,25 @@ class TrellisScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final vineSafeAppBar = appBar == null ? null : VineSafeAppBar(child: appBar!);
+    // Read here, above the Scaffold: inside its body the keyboard inset has
+    // already been taken out of the MediaQuery.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return Scaffold(
-      appBar: vineSafeAppBar,
-      extendBodyBehindAppBar: true,
       floatingActionButton: floatingActionButton,
       resizeToAvoidBottomInset: true,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        color: AppColors.parchmentLight,
-        child: CornerVineBackground(
-          // extendBodyBehindAppBar lets the parchment + vines run behind a
-          // transparent AppBar; VineSafeArea keeps the content in the space
-          // between the corner vines (and clear of the AppBar) — counting the
-          // app bar and status bar toward that clearance rather than stacking
-          // a second inset beneath them.
-          child: VineSafeArea(
-            clearBottomVines: true,
-            child: SingleChildScrollView(
-              padding: padding,
-              child: body,
+      body: VineFrame(
+        header: appBar,
+        keyboardOpen: keyboardOpen,
+        child: Builder(
+          builder: (context) => SingleChildScrollView(
+            padding: padding.add(
+              EdgeInsets.only(
+                bottom: VineFrame.bottomRestInset(context, keyboardOpen: keyboardOpen) +
+                    MediaQuery.paddingOf(context).bottom,
+              ),
             ),
+            child: body,
           ),
         ),
       ),

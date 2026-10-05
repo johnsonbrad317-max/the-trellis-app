@@ -108,10 +108,14 @@ class TrellisVisual extends StatelessWidget {
   }
 }
 
-/// The 180-Day Growth Season card, shared by the Runner's own dashboard and
-/// the read-only view a Witness sees for a Runner they're watching.
+/// The "This Season" card, shared by the Runner's own dashboard and the
+/// read-only view a Witness sees for a Runner they're watching.
 ///
-/// [vitalityScore] is 0.0-1.0 (season consistency); [isDrooping] is true
+/// What it reports is deliberately worded as what the Runner DID — the share
+/// of their rhythms kept over the last 180 days — never as a measure of their
+/// standing with God. ("Vitality: 22%" said something this app has no
+/// business saying.) [vitalityScore] is that share, 0.0-1.0 (the name is
+/// historical; it is never shown); [isDrooping] is true
 /// when an Anchor Rhythm has been missed three times in a row; [hasData] is
 /// false for a Runner with no check-ins yet, which shows the empty trellis
 /// and a single line of encouragement — no score, no warnings.
@@ -128,7 +132,7 @@ class VineVisualizerCard extends StatelessWidget {
   final bool isDrooping;
   final bool hasData;
 
-  /// False hides the "180-Day Growth Season" heading — for contexts (like
+  /// False hides the "This Season" heading — for contexts (like
   /// the Witness dashboard) that already show their own contextual title
   /// above this card.
   final bool showTitle;
@@ -155,7 +159,15 @@ class VineVisualizerCard extends StatelessWidget {
       child: Column(
         children: [
           if (hasData && showTitle) ...[
-            Text('180-Day Growth Season', style: textTheme.titleMedium),
+            Text('This Season', style: textTheme.titleLarge),
+            const SizedBox(height: 2),
+            Text(
+              'the last 180 days',
+              style: textTheme.bodySmall?.copyWith(
+                color: AppColors.forestGreen.withValues(alpha: 0.7),
+                fontStyle: FontStyle.italic,
+              ),
+            ),
             const SizedBox(height: 16),
           ],
           TrellisVisual(state: state, reveal: vitalityScore),
@@ -170,7 +182,7 @@ class VineVisualizerCard extends StatelessWidget {
             Text(
               isDrooping
                   ? 'An Anchor Rhythm has been missed three times in a row — this vine could use some care.'
-                  : 'Vitality: ${(vitalityScore * 100).round()}%',
+                  : 'Rhythms kept: ${(vitalityScore * 100).round()}%',
               style: textTheme.bodyMedium?.copyWith(
                 color: isDrooping ? AppColors.terracotta : AppColors.forestGreen,
                 fontWeight: FontWeight.w600,

@@ -1,11 +1,5 @@
-import 'bookplate_chip.dart';
-import 'bookplate_dialog.dart';
-import 'bookplate_plate.dart';
-import 'brass_glyph.dart';
-import 'calendar_connect_sheet.dart';
-import 'church_affiliation_dialog.dart';
-import 'custom_toggle.dart';
-import 'launch_link.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/runner_profile.dart';
@@ -14,7 +8,16 @@ import '../screens/auth_onboarding_screen.dart';
 import '../screens/runner/account_settings_screen.dart';
 import '../screens/runner/settings_witnesses.dart';
 import '../services/calendar_service.dart';
+import '../services/local_reminders.dart';
 import '../theme/app_colors.dart';
+import 'bookplate_chip.dart';
+import 'bookplate_dialog.dart';
+import 'bookplate_plate.dart';
+import 'brass_glyph.dart';
+import 'calendar_connect_sheet.dart';
+import 'church_affiliation_dialog.dart';
+import 'custom_toggle.dart';
+import 'launch_link.dart';
 
 /// The "Calendars" row: opens the connect sheet, with a subtitle naming the
 /// connected providers. Loads the connection list when the drawer opens.
@@ -91,6 +94,22 @@ class SettingsDrawer extends StatelessWidget {
     showBookplateNotice(context, "You've joined ${profile.churchName ?? 'your church'}.");
   }
 
+  /// A line under a notification switch saying when it fires and where its
+  /// time is set — or what it is, for the ones whose name doesn't say.
+  String? _notificationHint(BuildContext context, NotificationCategory category) =>
+      switch (category) {
+        NotificationCategory.checkInReminder =>
+          'Each day at ${profile.dailyCheckInReminder.format(context)}. Change the time on '
+              'the Rule of Life screen.',
+        NotificationCategory.prayerReminders =>
+          'Each day at ${profile.prayerReminderTime.format(context)}. Change the time in '
+              'the Prayer Garden.',
+        NotificationCategory.weeklyRollUp =>
+          'Once a week: how many rhythms each Runner you walk with kept.',
+        NotificationCategory.anchorRhythmAlerts => null,
+        NotificationCategory.meetingRequests => null,
+      };
+
   Future<void> _editNotificationSettings(BuildContext context) async {
     final categories =
         NotificationCategory.values.where((c) => c.visibleForRole(_viewRole)).toList();
@@ -114,6 +133,7 @@ class SettingsDrawer extends StatelessWidget {
             for (final category in categories)
               ToggleRow(
                 title: category.label,
+                subtitle: _notificationHint(dialogContext, category),
                 value: profile.notificationPreferences[category] ?? true,
                 // The write is async, so it must NOT be the setState callback
                 // itself (setState rejects a callback that returns a Future).
@@ -122,6 +142,13 @@ class SettingsDrawer extends StatelessWidget {
                 onChanged: (value) async {
                   final save = profile.toggleNotification(category, value);
                   setDialogState(() {});
+                  // Switching one of this phone's own reminders on is the
+                  // moment to make sure the phone will allow it.
+                  if (value &&
+                      (category == NotificationCategory.checkInReminder ||
+                          category == NotificationCategory.prayerReminders)) {
+                    unawaited(LocalReminders.requestPermission());
+                  }
                   final saved = await runWithFailureNotice(
                     dialogContext,
                     () => save,

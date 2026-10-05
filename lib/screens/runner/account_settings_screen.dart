@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
+import '../../models/phone_number.dart';
 import '../../models/runner_profile.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_app_bar.dart';
@@ -23,6 +24,7 @@ class AccountSettingsScreen extends StatefulWidget {
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final _passwordFormKey = GlobalKey<FormState>();
   late final TextEditingController _emailController;
+  late final TextEditingController _phoneController;
   final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
 
@@ -32,17 +34,55 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   void initState() {
     super.initState();
     _emailController = TextEditingController(text: _profile.email);
+    _phoneController = TextEditingController(
+      text: _profile.phoneNumber == null ? '' : formatPhoneNumber(_profile.phoneNumber!),
+    );
   }
 
   @override
   void dispose() {
     _emailController.dispose();
+    _phoneController.dispose();
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
     super.dispose();
   }
 
   bool _isSavingEmail = false;
+  bool _isSavingPhone = false;
+
+  /// Saves this person's own mobile number — the one the people they are
+  /// paired with use to text them.
+  Future<void> _savePhone() async {
+    if (_isSavingPhone) return;
+    final number = normalizePhoneNumber(_phoneController.text);
+    if (number == null) {
+      showBookplateNotice(
+        context,
+        _phoneController.text.trim().isEmpty
+            ? 'Enter your mobile number.'
+            : "That doesn't look like a mobile number. Enter all 10 digits, or start with + "
+                'and your country code if you are outside the US.',
+      );
+      return;
+    }
+    if (number == _profile.phoneNumber) {
+      showBookplateNotice(context, 'That is already your mobile number.');
+      return;
+    }
+
+    setState(() => _isSavingPhone = true);
+    final saved = await runWithFailureNotice(
+      context,
+      () => _profile.setPhoneNumber(number),
+      failure: "Couldn't save your mobile number. Check your connection and try again.",
+    );
+    if (!mounted) return;
+    setState(() => _isSavingPhone = false);
+    if (!saved) return;
+    _phoneController.text = formatPhoneNumber(number);
+    showBookplateNotice(context, 'Mobile number saved.');
+  }
   bool _isChangingPassword = false;
 
   static final _emailShape = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
@@ -270,6 +310,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.done,
+                    autocorrect: false,
+                    autofillHints: const [AutofillHints.email],
                     decoration: const InputDecoration(labelText: 'Email'),
                   ),
                   const SizedBox(height: 12),
@@ -280,6 +323,43 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       compact: true,
                       busy: _isSavingEmail,
                       onPressed: _saveEmail,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Mobile Number', style: textTheme.titleLarge),
+            const SizedBox(height: 12),
+            BookplatePlate(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.telephoneNumber],
+                    decoration: const InputDecoration(labelText: 'Mobile Number'),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Only the people you are paired with can see this — your Witness, or the '
+                    'Runners you walk with — so they can text you encouragement and check in '
+                    'on you.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: AppColors.forestGreen.withValues(alpha: 0.75),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: BookplateButton(
+                      label: 'Save Number',
+                      compact: true,
+                      busy: _isSavingPhone,
+                      onPressed: _savePhone,
                     ),
                   ),
                 ],
@@ -298,6 +378,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     TextFormField(
                       controller: _currentPasswordController,
                       obscureText: true,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.password],
                       decoration: const InputDecoration(labelText: 'Current Password'),
                       validator: (value) =>
                           (value == null || value.isEmpty) ? 'Enter your current password.' : null,
@@ -306,6 +388,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     TextFormField(
                       controller: _newPasswordController,
                       obscureText: true,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.newPassword],
                       decoration: const InputDecoration(labelText: 'New Password'),
                       validator: (value) {
                         if (value == null || value.isEmpty) return 'Enter a new password.';

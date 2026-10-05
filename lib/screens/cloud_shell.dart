@@ -7,7 +7,7 @@ import '../widgets/shell_app_bar_actions.dart';
 import '../widgets/role_switcher_sheet.dart';
 import '../widgets/settings_drawer.dart';
 import '../widgets/bottom_vine_frame.dart';
-import '../widgets/corner_vine_background.dart';
+import '../widgets/vine_frame.dart';
 import '../widgets/bookplate_dialog.dart';
 import '../widgets/bookplate_plate.dart';
 import '../widgets/brass_glyph.dart';
@@ -31,7 +31,8 @@ class CloudShell extends StatefulWidget {
   State<CloudShell> createState() => _CloudShellState();
 }
 
-class _CloudShellState extends State<CloudShell> with ShellDataLoad<CloudShell> {
+class _CloudShellState extends State<CloudShell>
+    with ShellDataLoad<CloudShell> {
   int _tabIndex = 0;
 
   RunnerProfile get _profile => widget.profile;
@@ -80,8 +81,19 @@ class _CloudShellState extends State<CloudShell> with ShellDataLoad<CloudShell> 
         ];
 
         return Scaffold(
-          appBar: VineSafeAppBar(
-            child: AppBar(
+          // The parchment gradient runs on behind the footer (see BottomVineFrame).
+          extendBody: true,
+          drawer: SettingsDrawer(profile: _profile, inCloud: true),
+          // The same forest-green veil as every bookplate dialog and sheet,
+          // rather than Material's stock black scrim.
+          drawerScrimColor: AppColors.forestGreen.withValues(alpha: 0.45),
+          // VineFrame stops the page at the bottom bar (with extendBody the
+          // Scaffold reports the bar's height as bottom padding, which the
+          // frame consumes) and slides the header away while a tab is scrolled.
+          body: VineFrame(
+            bottomVines: false,
+            headerResetToken: _tabIndex,
+            header: AppBar(
               toolbarHeight: VineSafeAppBar.toolbarHeight,
               automaticallyImplyLeading: false,
               leading: const ShellMenuButton(),
@@ -94,7 +106,8 @@ class _CloudShellState extends State<CloudShell> with ShellDataLoad<CloudShell> 
                     label: 'Church Profile',
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) => ChurchProfileScreen(profile: _profile),
+                        builder: (context) =>
+                            ChurchProfileScreen(profile: _profile),
                       ),
                     ),
                   ),
@@ -109,58 +122,38 @@ class _CloudShellState extends State<CloudShell> with ShellDataLoad<CloudShell> 
                   // actually inside the Cloud shell, show "Cloud" rather than
                   // whichever of those two was last active.
                   label: 'Cloud',
-                  onPressed: () => showRoleSwitcherSheet(context, _profile, inCloud: true),
+                  onPressed: () =>
+                      showRoleSwitcherSheet(context, _profile, inCloud: true),
                 ),
               ),
             ),
-          ),
-          extendBodyBehindAppBar: true,
-          // The parchment gradient runs on behind the footer (see BottomVineFrame).
-          extendBody: true,
-          drawer: SettingsDrawer(profile: _profile, inCloud: true),
-          // The same forest-green veil as every bookplate dialog and sheet,
-          // rather than Material's stock black scrim.
-          drawerScrimColor: AppColors.forestGreen.withValues(alpha: 0.45),
-          body: Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: AppColors.parchmentLight,
-            child: CornerVineBackground(
-              bottomVines: false,
-              // VineSafeArea (a SafeArea) — its bottom inset is what keeps every tab's content above
-              // the bottom bar: with extendBody the Scaffold reports the bar's
-              // height as bottom padding, and this consumes it. Don't set
-              // bottom: false.
-              child: VineSafeArea(
-                child: Column(
-                  children: [
-                    // Still loading: say so, or every tab reads "No data yet".
-                    if (shellLoadingVisible)
-                      const ShellLoadingLine(label: "Loading your church's data…")
-                    // Everything failed: a connection or sign-in problem —
-                    // a real error. (An EMPTY church is not one; the tabs
-                    // show their own "No data yet" panels for that.)
-                    else if (shellLoadFailed)
-                      _LoadNotice(
-                        accent: AppColors.terracotta,
-                        message: "Couldn't load your church's data. Check your connection.",
-                        detail: _profile.cloudLoadDetail,
-                        onRetry: _loadCloud,
-                      )
-                    // Some parts failed, the rest loaded: say which, quietly.
-                    else if (_profile.cloudLoadIssues.isNotEmpty)
-                      _LoadNotice(
-                        accent: AppColors.antiqueBrass,
-                        message:
-                            "Some of your church's data couldn't be loaded "
-                            '(${_profile.cloudLoadIssues.join(', ')}).',
-                        detail: _profile.cloudLoadDetail,
-                        onRetry: _loadCloud,
-                      ),
-                    Expanded(child: pages[_tabIndex]),
-                  ],
-                ),
-              ),
+            child: Column(
+              children: [
+                // Still loading: say so, or every tab reads "No data yet".
+                if (shellLoadingVisible)
+                  const ShellLoadingLine(label: "Loading your church's data…")
+                // Everything failed: a connection or sign-in problem —
+                // a real error. (An EMPTY church is not one; the tabs
+                // show their own "No data yet" panels for that.)
+                else if (shellLoadFailed)
+                  _LoadNotice(
+                    accent: AppColors.terracotta,
+                    message: "Couldn't load your church's data. Check your connection.",
+                    detail: _profile.cloudLoadDetail,
+                    onRetry: _loadCloud,
+                  )
+                // Some parts failed, the rest loaded: say which, quietly.
+                else if (_profile.cloudLoadIssues.isNotEmpty)
+                  _LoadNotice(
+                    accent: AppColors.antiqueBrass,
+                    message:
+                        "Some of your church's data couldn't be loaded "
+                        '(${_profile.cloudLoadIssues.join(', ')}).',
+                    detail: _profile.cloudLoadDetail,
+                    onRetry: _loadCloud,
+                  ),
+                Expanded(child: pages[_tabIndex]),
+              ],
             ),
           ),
           bottomNavigationBar: BottomVineFrame(

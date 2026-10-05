@@ -43,21 +43,25 @@ class WatchedRuleItem {
   final bool isChurchMandated;
 
   /// Daily status for the trailing 7 days, oldest first and today last —
-  /// e.g. index 5 is "yesterday". Three states, not two: `null` means this
-  /// rhythm wasn't even scheduled that day (e.g. a Wed/Fri-only fast on a
-  /// Tuesday) — no obligation existed, so it's neither a hit nor a miss and
-  /// must never render as one. `true`/`false` mean it was due and was or
-  /// wasn't done. Drives the Live Progress heat map
+  /// e.g. index 5 is "yesterday". Three states, not two: `null` means no
+  /// obligation existed that day, so it's neither a hit nor a miss and must
+  /// never render as one — the rhythm wasn't scheduled (e.g. a Wed/Fri-only
+  /// fast on a Tuesday), or it didn't count yet (the Runner hadn't committed
+  /// their Rule of Life, or hadn't added this rhythm). `true`/`false` mean
+  /// it was due and was or wasn't done. Drives the Live Progress heat map
   /// (witness_rule_screen.dart's _WeekHeatMap).
   final List<bool?> weekCompletion;
 
-  bool get missedYesterday => weekCompletion.length >= 6 && weekCompletion[5] == false;
+  /// How many days this week this rhythm was due (and counted).
+  int get weekDueCount => weekCompletion.whereType<bool>().length;
 
-  double get weekCompletionRate {
-    final scheduledDays = weekCompletion.whereType<bool>().toList();
-    if (scheduledDays.isEmpty) return completionRate;
-    return scheduledDays.where((done) => done).length / scheduledDays.length;
-  }
+  /// How many of those were kept.
+  int get weekKeptCount => weekCompletion.where((done) => done == true).length;
+
+  /// This week's kept share, or null when nothing was due — which is not 0%.
+  double? get weekRate => weekDueCount == 0 ? null : weekKeptCount / weekDueCount;
+
+  double get weekCompletionRate => weekRate ?? completionRate;
 }
 
 /// A meeting between this Witness and the watched Runner — either proposed
@@ -90,6 +94,14 @@ class WatchedMeetingRequest {
   final DateTime? time;
 }
 
+/// Where a watched Runner stands, in one word, for their card.
+enum RunnerStanding {
+  /// No committed Rule of Life yet — nothing to be on or off track with.
+  gettingStarted,
+  thriving,
+  needsSupport,
+}
+
 /// A Runner this Witness is walking alongside.
 ///
 /// A Witness observes and responds — they don't edit the Runner's Rule of
@@ -106,13 +118,14 @@ class WatchedRunner {
     required this.witnessPrayers,
     required this.referenceDate,
     this.recentActivity = const [],
-    this.missedAnchorAlert,
     this.lastCheckInDate,
     this.phoneNumber,
     this.seasonScore,
     this.hasSeasonData = false,
     this.isSeasonDrooping = false,
     this.lockRemovalRequested = false,
+    this.hasCommittedRule = true,
+    this.ruleCommittedAt,
   });
 
   final String id;
@@ -160,16 +173,74 @@ class WatchedRunner {
   /// waiting on a Witness's answer (RunnerProfile.resolveLockRemoval).
   bool lockRemovalRequested;
 
-  /// Non-null when an Anchor Rhythm has been missed and needs this
-  /// Witness's attention.
-  String? missedAnchorAlert;
   DateTime? lastCheckInDate;
+
+  /// Non-null when an Anchor Rhythm was missed yesterday and needs this
+  /// Witness's attention.
+  String? get missedAnchorAlert {
+    final missed = anchorMissedYesterday;
+    return missed == null ? null : 'Missed "${missed.title}" yesterday.';
+  }
+
+  /// Whether this Runner has committed their Rule of Life. Until they have,
+  /// nothing counts against them: no missed days, no alerts, no "needs
+  /// support" — a draft is not a promise.
+  final bool hasCommittedRule;
+
+  /// When they committed (null if not, or if the database doesn't say).
+  final DateTime? ruleCommittedAt;
 
   String get firstName => name.split(' ').first;
 
-  /// A quick status derived from whether an Anchor Rhythm alert is active —
-  /// drives the carousel's status dot ("Thriving" vs. "Needs Support").
-  bool get isThriving => missedAnchorAlert == null;
+  /// Still setting up: there is nothing yet to be on or off track with.
+  bool get isGettingStarted => !hasCommittedRule || ruleItems.isEmpty;
+
+  /// This week's kept share across every rhythm, counting only days that were
+  /// actually due. Null when nothing was due yet — which is not a bad week.
+  double? get weekRate {
+    var due = 0;
+    var kept = 0;
+    for (final item in ruleItems) {
+      due += item.weekDueCount;
+      kept += item.weekKeptCount;
+    }
+    return due == 0 ? null : kept / due;
+  }
+
+  /// A missed Anchor Rhythm yesterday, or under half of this week's rhythms
+  /// kept. Never true for a Runner who is still getting started.
+  bool get isStruggling {
+    if (isGettingStarted) return false;
+    final rate = weekRate;
+    return anchorMissedYesterday != null || (rate != null && rate < 0.5);
+  }
+
+  /// Days since this Runner was last heard from: their last check-in, or the
+  /// day they committed if that is more recent (someone who committed this
+  /// morning has not "gone quiet").
+  int get daysQuiet {
+    final committedAt = ruleCommittedAt;
+    final lastCheckIn = lastCheckInDate;
+    DateTime? latest = lastCheckIn;
+    if (committedAt != null && (latest == null || committedAt.isAfter(latest))) {
+      latest = committedAt;
+    }
+    if (latest == null) return 999;
+    final today = DateTime.now();
+    return DateTime(today.year, today.month, today.day)
+        .difference(DateTime(latest.year, latest.month, latest.day))
+        .inDays;
+  }
+
+  /// Committed, but not heard from for two days or more.
+  bool get isDrifting => !isGettingStarted && daysQuiet >= 2;
+
+  /// The one-word standing shown on the Runner's card.
+  RunnerStanding get standing {
+    if (isGettingStarted) return RunnerStanding.gettingStarted;
+    if (isStruggling) return RunnerStanding.needsSupport;
+    return RunnerStanding.thriving;
+  }
 
   /// Drives the shared [VineVisualizerCard]: the real season score when
   /// loaded, otherwise the average of the trailing week's completion rates.
@@ -180,18 +251,27 @@ class WatchedRunner {
     return ruleItems.fold<double>(0, (sum, item) => sum + item.completionRate) / ruleItems.length;
   }
 
-  /// This week's completion rate across [ruleItems], used by the Witness's
-  /// Nudge Engine (Thriving/Struggling/Drifting thresholds).
-  double get weekCompletionRate {
-    if (ruleItems.isEmpty) return 0;
-    return ruleItems.fold<double>(0, (sum, item) => sum + item.weekCompletionRate) /
-        ruleItems.length;
-  }
+  /// This week's completion rate, 0 when nothing was due. Prefer [weekRate],
+  /// which can tell "nothing due" from "nothing done".
+  double get weekCompletionRate => weekRate ?? 0;
 
-  /// The first Anchor Rhythm missed yesterday, if any.
+  /// The first Anchor Rhythm the Runner reported missing yesterday, if any.
+  ///
+  /// "Yesterday" is the real calendar day before today — found in each
+  /// rhythm's week by date, not assumed to sit at a fixed position (the week
+  /// is anchored to the Runner's latest reported day, see [referenceDate]).
+  /// Only a day the Runner actually answered "no" for counts here: a day they
+  /// simply haven't reported on yet is not a miss (see
+  /// RunnerProfile.missedDayCounts), it is silence — which [isDrifting] covers.
   WatchedRuleItem? get anchorMissedYesterday {
+    final today = DateTime.now();
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
+    final reference = DateTime(referenceDate.year, referenceDate.month, referenceDate.day);
+    final index = 6 - reference.difference(yesterday).inDays;
+    if (index < 0 || index > 6) return null;
     for (final item in ruleItems) {
-      if (item.isAnchorRhythm && item.missedYesterday) return item;
+      if (!item.isAnchorRhythm || item.weekCompletion.length <= index) continue;
+      if (item.weekCompletion[index] == false) return item;
     }
     return null;
   }

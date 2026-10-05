@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import 'app_colors.dart';
 
@@ -59,6 +60,10 @@ class AppTheme {
         scrolledUnderElevation: 0,
         foregroundColor: AppColors.forestGreen,
         titleTextStyle: textTheme.titleLarge,
+        // Dark clock and battery marks: the bar is transparent over parchment,
+        // and left to itself Flutter reads "transparent" as dark and paints
+        // them white.
+        systemOverlayStyle: darkStatusBarMarks,
       ),
       // The only Material components left in the app are structural hosts that
       // paint nothing of their own — Scaffold, the app bar, the drawer, the
@@ -96,3 +101,11 @@ class AppTheme {
     );
   }
 }
+
+/// Status-bar marks (clock, signal, battery) drawn dark, for the app's light
+/// parchment. Applied app-wide in main.dart and on every app bar.
+const SystemUiOverlayStyle darkStatusBarMarks = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.dark, // Android
+  statusBarBrightness: Brightness.light, // iOS: light background -> dark marks
+);

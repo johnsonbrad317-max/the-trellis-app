@@ -31,6 +31,19 @@ class PushNotifications {
     if (_initialized) return;
     _initialized = true;
     FirebaseMessaging.onBackgroundMessage(_backgroundMessageHandler);
+    // iOS shows nothing for a notification that arrives while the app is open
+    // unless told to. Show the banner: a meeting request or a reminder is no
+    // less worth seeing because the app happens to be on screen. (This also
+    // governs the on-device reminders, which share the same iOS delegate.)
+    try {
+      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (error) {
+      debugPrint('Setting foreground notification options failed: ${error.runtimeType}');
+    }
   }
 
   /// Requests notification permission (a no-op prompt on Android <13 and

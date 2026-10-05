@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/phone_number.dart';
 import 'bookplate_dialog.dart';
 
 /// `key=value&…` with every value percent-encoded (spaces as `%20`).
@@ -14,15 +15,15 @@ String _encodeQuery(Map<String, String> parameters) => parameters.entries
     .join('&');
 
 /// An `sms:` link to [phone], optionally with a pre-written [body]. The number
-/// is reduced to its digits (and a leading `+`) so spaces, dashes and
-/// parentheses typed by a person can't break the link.
+/// is put in international form (`+1…` for a US number) where it can be —
+/// the form Apple matches most reliably for iMessage — and otherwise reduced
+/// to its digits, so spaces, dashes and parentheses typed by a person can't
+/// break the link. Whether the message goes as an iMessage or a text is the
+/// phone's decision, not this app's.
 Uri smsUri(String phone, {String? body}) {
-  final trimmed = phone.trim();
-  final digits = trimmed.replaceAll(RegExp(r'[^0-9]'), '');
-  final number = trimmed.startsWith('+') ? '+$digits' : digits;
   return Uri(
     scheme: 'sms',
-    path: number,
+    path: phoneNumberForMessaging(phone),
     query: body == null || body.isEmpty ? null : _encodeQuery({'body': body}),
   );
 }

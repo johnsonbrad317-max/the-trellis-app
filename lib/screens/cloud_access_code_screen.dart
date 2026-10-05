@@ -60,8 +60,9 @@ class _CloudAccessCodeScreenState extends State<CloudAccessCodeScreen> {
               const SizedBox(height: 28),
               TextField(
                 controller: _codeController,
-                autofocus: true,
                 textCapitalization: TextCapitalization.characters,
+                textInputAction: TextInputAction.done,
+                autocorrect: false,
                 textAlign: TextAlign.center,
                 style: textTheme.headlineSmall?.copyWith(letterSpacing: 4),
                 decoration: InputDecoration(

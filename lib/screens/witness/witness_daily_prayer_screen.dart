@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/runner_profile.dart';
 import '../../models/watched_prayer_item.dart';
+import '../../models/witness_messages.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_app_bar.dart';
 import '../../widgets/bookplate_dialog.dart';
@@ -56,28 +57,31 @@ class _WitnessDailyPrayerScreenState extends State<WitnessDailyPrayerScreen> {
       failure: "Couldn't save that you prayed for this. Check your connection.",
     );
 
-    final phone = widget.runnerPhoneNumber?.trim();
-    if (phone == null || phone.isEmpty) return;
-
-    final send = await showBookplateConfirm(
-      context,
-      title: 'Prayed',
-      message: 'Let ${widget.runnerFirstName} know you prayed for this?',
-      confirmLabel: 'Send',
-      cancelLabel: 'Not now',
-    );
-    if (!send || !mounted) return;
-
-    await launchOrNotify(
-      context,
-      smsUri(
-        phone,
-        body: 'Hey ${widget.runnerFirstName}, just lifted up your request for ${item.title}. '
-            'Standing with you.',
-      ),
-      unavailable: 'No messaging app is available on this device.',
-    );
+    // The "let them know" offer waits for the end of the session (the
+    // completion view below), exactly as it does for a Runner praying through
+    // their own list — not a dialog after every card.
+    _prayedThisSession = true;
   }
+
+  /// At least one card was prayed through in this sitting.
+  bool _prayedThisSession = false;
+
+  String? get _runnerPhone {
+    final phone = widget.runnerPhoneNumber?.trim();
+    return phone == null || phone.isEmpty ? null : phone;
+  }
+
+  /// Opens Messages to the Runner with a short "I prayed for you" draft. It
+  /// never names a request — a text shows on a lock screen, and what someone
+  /// asked prayer for is theirs to keep private.
+  Future<void> _textRunner(PrayerCompletionContact contact) => launchOrNotify(
+        context,
+        smsUri(
+          contact.phoneNumber,
+          body: witnessTextFor(WitnessTextReason.prayed, firstName: widget.runnerFirstName),
+        ),
+        unavailable: 'No messaging app is available on this device.',
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +102,27 @@ class _WitnessDailyPrayerScreenState extends State<WitnessDailyPrayerScreen> {
                     style: textTheme.titleMedium,
                     textAlign: TextAlign.center,
                   ),
-                PrayerCompletionView(verse: _completionVerse),
+                PrayerCompletionView(
+                  verse: _completionVerse,
+                  contacts: [
+                    if (_prayedThisSession && _runnerPhone != null)
+                      PrayerCompletionContact(
+                        label: widget.runnerFirstName,
+                        phoneNumber: _runnerPhone!,
+                      ),
+                  ],
+                  onTextContact: _textRunner,
+                ),
+                if (_prayedThisSession && _runnerPhone == null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    "${widget.runnerFirstName} hasn't added a mobile number yet, so there is no "
+                    'one to address a text to. They can add it under Account & Membership in '
+                    'the menu.',
+                    style: textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ],
             )
           : Column(

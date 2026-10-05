@@ -186,6 +186,63 @@ class ShellLoadFailedPlate extends StatelessWidget {
   }
 }
 
+/// A gentle ask, above a shell's tabs, for an account that has no mobile
+/// number on file (anyone who signed up before it was asked for). Without it
+/// the people they are paired with have no one to address a text to.
+/// "Not now" hides it until the app is next opened.
+class MissingPhonePlate extends StatefulWidget {
+  const MissingPhonePlate({super.key, required this.onAdd});
+
+  /// Opens Account & Membership, where the number is entered.
+  final VoidCallback onAdd;
+
+  @override
+  State<MissingPhonePlate> createState() => _MissingPhonePlateState();
+}
+
+class _MissingPhonePlateState extends State<MissingPhonePlate> {
+  static bool _dismissedThisSession = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_dismissedThisSession) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: BookplatePlate(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Add your mobile number so the people you are paired with can text you.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 4,
+              children: [
+                BookplateButton(
+                  label: 'Not now',
+                  compact: true,
+                  variant: BookplateButtonVariant.link,
+                  onPressed: () => setState(() => _dismissedThisSession = true),
+                ),
+                BookplateButton(
+                  label: 'Add Number',
+                  compact: true,
+                  variant: BookplateButtonVariant.secondary,
+                  onPressed: widget.onAdd,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The hand-drawn three-rule "hamburger" that opens the enclosing
 /// [Scaffold]'s drawer — the woodcut stand-in for the AppBar's automatic
 /// Material menu icon. Used as the shells' AppBar `leading`.

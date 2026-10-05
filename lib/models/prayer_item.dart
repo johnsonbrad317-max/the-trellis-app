@@ -33,7 +33,24 @@ extension PrayerCategoryLabel on PrayerCategory {
         PrayerCategory.people => BrassGlyphKind.person,
         PrayerCategory.situations => BrassGlyphKind.mountain,
       };
+
+  /// The category said of one prayer rather than of a list — the small
+  /// heading on a single prayer's card.
+  String get singularLabel => switch (this) {
+        PrayerCategory.witnessRequests => 'From My Witness',
+        PrayerCategory.people => 'Person',
+        PrayerCategory.situations => 'Situation',
+      };
 }
+
+/// The private Supabase Storage bucket holding prayer photos. Each signed-in
+/// user may read and write only the folder named with their own user id, so a
+/// photo is only ever shown to the Runner who owns the prayer.
+const prayerPhotoBucket = 'prayer-photos';
+
+/// Where one prayer's photo lives inside [prayerPhotoBucket].
+String prayerPhotoPathFor({required String userId, required String prayerId}) =>
+    '$userId/$prayerId.jpg';
 
 /// A single burden or praise in the Runner's Prayer Garden.
 class PrayerItem {
@@ -48,6 +65,7 @@ class PrayerItem {
     this.isAnswered = false,
     this.lastPrayedDate,
     this.answeredDate,
+    this.photoPath,
   });
 
   factory PrayerItem.fromRow(Map<String, dynamic> row) => PrayerItem(
@@ -65,7 +83,17 @@ class PrayerItem {
         answeredDate: row['answered_date'] == null
             ? null
             : DateTime.parse(row['answered_date'] as String),
+        photoPath: _photoPathFrom(row['photo_path']),
       );
+
+  /// Tolerant on purpose: a database that has not had the photo migration run
+  /// has no `photo_path` column at all, and prayers must still load from it.
+  static String? _photoPathFrom(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value : null;
+
+  // `photo_path` is deliberately not part of an insert: a photo can only be
+  // uploaded once the row (and so its id) exists, and leaving the column out
+  // keeps adding a prayer working on a database without it.
 
   Map<String, dynamic> toInsertRow(String runnerId) => {
         'runner_id': runnerId,
@@ -95,6 +123,11 @@ class PrayerItem {
   /// When this prayer was marked answered — drives the Blooming Garden's
   /// tap-to-view detail sheet.
   DateTime? answeredDate;
+
+  /// Path of this prayer's photo inside the private [prayerPhotoBucket], or
+  /// null when it has none (initials are shown instead). Only the Runner who
+  /// owns the prayer can read the photo — it is never sent to a Witness.
+  String? photoPath;
 
   bool wasPrayedOn(DateTime date) =>
       lastPrayedDate != null &&

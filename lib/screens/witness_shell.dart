@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/runner_profile.dart';
+import 'runner/account_settings_screen.dart';
 import '../theme/app_colors.dart';
 import '../widgets/role_switcher_button.dart';
 import '../widgets/shell_app_bar_actions.dart';
 import '../widgets/role_switcher_sheet.dart';
 import '../widgets/settings_drawer.dart';
 import '../widgets/bottom_vine_frame.dart';
-import '../widgets/corner_vine_background.dart';
+import '../widgets/vine_frame.dart';
 import '../widgets/brass_glyph.dart';
 import '../widgets/feedback_dialog.dart';
 import '../widgets/nav_icon.dart';
@@ -34,7 +35,8 @@ class WitnessShell extends StatefulWidget {
   State<WitnessShell> createState() => _WitnessShellState();
 }
 
-class _WitnessShellState extends State<WitnessShell> with ShellDataLoad<WitnessShell> {
+class _WitnessShellState extends State<WitnessShell>
+    with ShellDataLoad<WitnessShell> {
   int _tabIndex = 0;
 
   RunnerProfile get _profile => widget.profile;
@@ -78,7 +80,10 @@ class _WitnessShellState extends State<WitnessShell> with ShellDataLoad<WitnessS
       builder: (context, _) {
         final selected = _profile.selectedWatchedRunner;
         final pages = [
-          WitnessDashboardScreen(profile: _profile, isLoading: shellLoadPending),
+          WitnessDashboardScreen(
+            profile: _profile,
+            isLoading: shellLoadPending,
+          ),
           WitnessRuleScreen(
             profile: _profile,
             onNavigateToConnect: () => setState(() => _tabIndex = 3),
@@ -88,13 +93,26 @@ class _WitnessShellState extends State<WitnessShell> with ShellDataLoad<WitnessS
         ];
 
         return Scaffold(
-          appBar: VineSafeAppBar(
-            child: AppBar(
+          // The parchment gradient runs on behind the footer (see BottomVineFrame).
+          extendBody: true,
+          drawer: SettingsDrawer(profile: _profile),
+          // The same forest-green veil as every bookplate dialog and sheet,
+          // rather than Material's stock black scrim.
+          drawerScrimColor: AppColors.forestGreen.withValues(alpha: 0.45),
+          // VineFrame stops the page at the bottom bar (with extendBody the
+          // Scaffold reports the bar's height as bottom padding, which the
+          // frame consumes) and slides the header away while a tab is scrolled.
+          body: VineFrame(
+            bottomVines: false,
+            headerResetToken: _tabIndex,
+            header: AppBar(
               toolbarHeight: VineSafeAppBar.toolbarHeight,
               automaticallyImplyLeading: false,
               leading: const ShellMenuButton(),
               title: AppBarTitle(
-                selected == null ? 'The Trellis' : 'Walking with ${selected.name}',
+                selected == null
+                    ? 'The Trellis'
+                    : 'Walking with ${selected.name}',
               ),
               actions: shellAppBarActions(
                 context,
@@ -104,7 +122,8 @@ class _WitnessShellState extends State<WitnessShell> with ShellDataLoad<WitnessS
                     label: 'Enter a pairing code',
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) => WitnessPairingCodeScreen(profile: _profile),
+                        builder: (context) =>
+                            WitnessPairingCodeScreen(profile: _profile),
                       ),
                     ),
                   ),
@@ -120,40 +139,28 @@ class _WitnessShellState extends State<WitnessShell> with ShellDataLoad<WitnessS
                 ),
               ),
             ),
-          ),
-          extendBodyBehindAppBar: true,
-          // The parchment gradient runs on behind the footer (see BottomVineFrame).
-          extendBody: true,
-          drawer: SettingsDrawer(profile: _profile),
-          // The same forest-green veil as every bookplate dialog and sheet,
-          // rather than Material's stock black scrim.
-          drawerScrimColor: AppColors.forestGreen.withValues(alpha: 0.45),
-          body: Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: AppColors.parchmentLight,
-            child: CornerVineBackground(
-              bottomVines: false,
-              // VineSafeArea (a SafeArea) — its bottom inset is what keeps every tab's content (and
-              // the Prayer tab's round "add" button) above the bottom bar:
-              // with extendBody the Scaffold reports the bar's height as
-              // bottom padding, and this consumes it. Don't set bottom: false.
-              child: VineSafeArea(
-                child: Column(
-                  children: [
-                    if (shellLoadFailed)
-                      ShellLoadFailedPlate(
-                        message:
-                            "Couldn't load your Runners, so the tabs look empty below. "
-                            'Check your connection and try again.',
-                        onRetry: () => runShellLoad(_profile.loadWitnessData),
-                      )
-                    else if (shellLoadingVisible)
-                      const ShellLoadingLine(label: 'Loading your Runners…'),
-                    Expanded(child: pages[_tabIndex]),
-                  ],
-                ),
-              ),
+            child: Column(
+              children: [
+                if (shellLoadFailed)
+                  ShellLoadFailedPlate(
+                    message:
+                        "Couldn't load your Runners, so the tabs look empty below. "
+                        'Check your connection and try again.',
+                    onRetry: () => runShellLoad(_profile.loadWitnessData),
+                  )
+                else if (shellLoadingVisible)
+                  const ShellLoadingLine(label: 'Loading your Runners…'),
+                // Shown only once the profile is loaded and has no number.
+                if (_profile.phoneNumber == null && !shellLoadPending)
+                  MissingPhonePlate(
+                    onAdd: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => AccountSettingsScreen(profile: _profile),
+                      ),
+                    ),
+                  ),
+                Expanded(child: pages[_tabIndex]),
+              ],
             ),
           ),
           bottomNavigationBar: BottomVineFrame(

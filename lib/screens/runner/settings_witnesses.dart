@@ -23,6 +23,39 @@ class SettingsWitnessesScreen extends StatefulWidget {
 class _SettingsWitnessesScreenState extends State<SettingsWitnessesScreen> {
   RunnerProfile get _profile => widget.profile;
 
+  /// This screen loads the Runner-side list itself. It is reached from every
+  /// role's menu, and in Witness or Cloud mode nothing else has loaded "my own
+  /// Witnesses" yet — it used to open there saying "no active Witnesses" to
+  /// someone who had one.
+  bool _loading = true;
+  bool _loadFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
+    var failed = false;
+    try {
+      // A no-op when the Runner shell already loaded it.
+      await _profile.loadRunnerData();
+    } catch (error) {
+      debugPrint('Loading Witnesses failed: ${error.runtimeType}');
+      failed = true;
+    }
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _loadFailed = failed;
+    });
+  }
+
   Future<void> _handleAccountabilityLockChanged(bool value) async {
     if (value) {
       await runWithFailureNotice(
@@ -104,6 +137,7 @@ class _SettingsWitnessesScreenState extends State<SettingsWitnessesScreen> {
         controller: reasonController,
         maxLines: 3,
         autofocus: true,
+        textCapitalization: TextCapitalization.sentences,
         decoration: InputDecoration(
           labelText: 'Reason',
           errorText: reasonMissing ? 'Please give a reason.' : null,
@@ -182,7 +216,38 @@ class _SettingsWitnessesScreenState extends State<SettingsWitnessesScreen> {
             const SizedBox(height: 24),
             Text('Active Witnesses', style: textTheme.titleLarge),
             const SizedBox(height: 12),
-            if (_profile.witnesses.isEmpty)
+            if (_loading && _profile.witnesses.isEmpty)
+              const BookplatePlate(
+                padding: EdgeInsets.all(20),
+                child: Center(
+                  child: BookplateSpinner(size: 24, semanticLabel: 'Loading your Witnesses'),
+                ),
+              )
+            else if (_loadFailed && _profile.witnesses.isEmpty)
+              BookplatePlate(
+                padding: const EdgeInsets.all(16),
+                accent: AppColors.terracotta,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      "Couldn't load your Witnesses. Check your connection and try again.",
+                      style: textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: BookplateButton(
+                        label: 'Retry',
+                        compact: true,
+                        variant: BookplateButtonVariant.secondary,
+                        onPressed: _load,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (_profile.witnesses.isEmpty)
               BookplatePlate(
                 padding: const EdgeInsets.all(20),
                 child: Text(

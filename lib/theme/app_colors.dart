@@ -12,6 +12,9 @@ class AppColors {
   /// green, brass or terracotta.
   static const Color parchmentLight = Color(0xFFF9F6F0);
   static const Color vellum = Color(0xFFF8F1E0);
+  /// [parchmentLight] at zero opacity — the far end of a fade INTO parchment.
+  /// (Fading to plain transparent would pass through grey on the way.)
+  static const Color parchmentClear = Color(0x00F9F6F0);
   static const Color vellumBorder = Color(0x261E3A2B);
 
   /// Muted terracotta / burnt sienna — stands in for stock red everywhere an

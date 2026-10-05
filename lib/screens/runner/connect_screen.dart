@@ -310,11 +310,17 @@ class _ConnectScreenState extends State<ConnectScreen> {
             const SizedBox(height: 12),
             TextField(
               controller: homeController,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              keyboardType: TextInputType.streetAddress,
               decoration: const InputDecoration(labelText: 'Home Address'),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: workController,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              keyboardType: TextInputType.streetAddress,
               decoration: const InputDecoration(labelText: 'Work Address'),
             ),
           ],

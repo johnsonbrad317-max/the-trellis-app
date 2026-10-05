@@ -67,7 +67,7 @@ class _ChurchDataSharingConsentScreenState extends State<ChurchDataSharingConsen
               Text(
                 "You're joining with a church-gifted code. By proceeding, you are opting "
                 "in to share Consumer Health Data — specifically your aggregate rhythm "
-                "consistency (vitality score) and check-in activity — with that church's "
+                "consistency (the share of your rhythms you keep) and check-in activity — with that church's "
                 'leadership on their Roster, so they can support your congregation well. '
                 'Your individual rhythm entries and journal content are never shared — '
                 'only that rolled-up summary.',

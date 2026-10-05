@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/runner_profile.dart';
+import 'runner/account_settings_screen.dart';
+import '../services/reminder_sync.dart';
 import '../theme/app_colors.dart';
 import '../widgets/brass_glyph.dart';
 import '../widgets/feedback_dialog.dart';
@@ -9,7 +11,7 @@ import '../widgets/shell_app_bar_actions.dart';
 import '../widgets/role_switcher_sheet.dart';
 import '../widgets/settings_drawer.dart';
 import '../widgets/bottom_vine_frame.dart';
-import '../widgets/corner_vine_background.dart';
+import '../widgets/vine_frame.dart';
 import '../widgets/nav_icon.dart';
 import '../widgets/vine_safe_app_bar.dart';
 import '../widgets/witness_code_dialog.dart';
@@ -33,7 +35,8 @@ class RunnerShell extends StatefulWidget {
   State<RunnerShell> createState() => _RunnerShellState();
 }
 
-class _RunnerShellState extends State<RunnerShell> with ShellDataLoad<RunnerShell> {
+class _RunnerShellState extends State<RunnerShell>
+    with ShellDataLoad<RunnerShell> {
   int _tabIndex = 0;
 
   RunnerProfile get _profile => widget.profile;
@@ -69,6 +72,17 @@ class _RunnerShellState extends State<RunnerShell> with ShellDataLoad<RunnerShel
     // they would otherwise sit on their "nothing here yet" panels as if that
     // were true.
     runShellLoad(_profile.loadRunnerData);
+    // Keeps this phone's check-in and prayer reminders in step with the
+    // Runner's settings and with what they have already done today.
+    _reminders = ReminderSync(_profile)..start();
+  }
+
+  late final ReminderSync _reminders;
+
+  @override
+  void dispose() {
+    _reminders.dispose();
+    super.dispose();
   }
 
   @override
@@ -84,8 +98,19 @@ class _RunnerShellState extends State<RunnerShell> with ShellDataLoad<RunnerShel
         ];
 
         return Scaffold(
-          appBar: VineSafeAppBar(
-            child: AppBar(
+          // The parchment gradient runs on behind the footer (see BottomVineFrame).
+          extendBody: true,
+          drawer: SettingsDrawer(profile: _profile),
+          // The same forest-green veil as every bookplate dialog and sheet,
+          // rather than Material's stock black scrim.
+          drawerScrimColor: AppColors.forestGreen.withValues(alpha: 0.45),
+          // VineFrame stops the page at the bottom bar (with extendBody the
+          // Scaffold reports the bar's height as bottom padding, which the
+          // frame consumes) and slides the header away while a tab is scrolled.
+          body: VineFrame(
+            bottomVines: false,
+            headerResetToken: _tabIndex,
+            header: AppBar(
               toolbarHeight: VineSafeAppBar.toolbarHeight,
               automaticallyImplyLeading: false,
               leading: const ShellMenuButton(),
@@ -110,42 +135,30 @@ class _RunnerShellState extends State<RunnerShell> with ShellDataLoad<RunnerShel
                 ),
               ),
             ),
-          ),
-          extendBodyBehindAppBar: true,
-          // The parchment gradient runs on behind the footer (see BottomVineFrame).
-          extendBody: true,
-          drawer: SettingsDrawer(profile: _profile),
-          // The same forest-green veil as every bookplate dialog and sheet,
-          // rather than Material's stock black scrim.
-          drawerScrimColor: AppColors.forestGreen.withValues(alpha: 0.45),
-          body: Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: AppColors.parchmentLight,
-            child: CornerVineBackground(
-              bottomVines: false,
-              // VineSafeArea (a SafeArea) — its bottom inset is what keeps every tab's content (and
-              // the Prayer tab's round "add" button) above the bottom bar:
-              // with extendBody the Scaffold reports the bar's height as
-              // bottom padding, and this consumes it. Don't set bottom: false.
-              child: VineSafeArea(
-                child: Column(
-                  children: [
-                    if (shellLoadFailed)
-                      ShellLoadFailedPlate(
-                        message:
-                            "Couldn't load your Witnesses, prayers and meetings, so they "
-                            'look empty below. Check your connection and try again.',
-                        onRetry: () => runShellLoad(_profile.loadRunnerData),
-                      )
-                    else if (shellLoadingVisible)
-                      const ShellLoadingLine(
-                        label: 'Loading your Witnesses, prayers and meetings…',
+            child: Column(
+              children: [
+                if (shellLoadFailed)
+                  ShellLoadFailedPlate(
+                    message:
+                        "Couldn't load your Witnesses, prayers and meetings, so they "
+                        'look empty below. Check your connection and try again.',
+                    onRetry: () => runShellLoad(_profile.loadRunnerData),
+                  )
+                else if (shellLoadingVisible)
+                  const ShellLoadingLine(
+                    label: 'Loading your Witnesses, prayers and meetings…',
+                  ),
+                // Shown only once the profile is loaded and has no number.
+                if (_profile.phoneNumber == null && !shellLoadPending)
+                  MissingPhonePlate(
+                    onAdd: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => AccountSettingsScreen(profile: _profile),
                       ),
-                    Expanded(child: pages[_tabIndex]),
-                  ],
-                ),
-              ),
+                    ),
+                  ),
+                Expanded(child: pages[_tabIndex]),
+              ],
             ),
           ),
           bottomNavigationBar: BottomVineFrame(

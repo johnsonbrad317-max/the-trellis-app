@@ -3,56 +3,73 @@ import 'package:flutter/material.dart';
 import '../../models/rule_item.dart' show RuleFrequency;
 import '../../models/runner_profile.dart';
 import '../../models/watched_runner.dart';
+import '../../models/witness_messages.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_dialog.dart';
 import '../../widgets/bookplate_plate.dart';
 import '../../widgets/brass_glyph.dart';
 import '../../widgets/launch_link.dart';
 
-// Backend notification triggers (Cloud Functions) that feed this screen and
-// the Witness's push notifications:
-// - push_weekly_summary: sent Sunday evening with the Runner's week-in-review.
-// - push_anchor_breach: sent immediately when the Runner logs a failed
-//   Anchor Rhythm in their Daily Check-In.
-// - push_missed_checkin: sent the morning after the Runner misses a
-//   scheduled daily check-in.
-
-enum _NudgeType { thriving, struggling, drifting }
+enum _NudgeType { gettingStarted, thriving, struggling, drifting }
 
 class _Nudge {
-  const _Nudge({required this.type, required this.message});
+  const _Nudge({required this.type, required this.message, required this.textReason});
 
   final _NudgeType type;
   final String message;
+
+  /// Which draft the card's "send a text" button opens Messages with.
+  final WitnessTextReason textReason;
 }
 
 _Nudge? _buildNudge(WatchedRunner runner) {
-  // A Runner with no rhythms yet has a completion rate of "0" only because
-  // there is nothing to complete — that is not a struggling week, and must
-  // not raise the terracotta alert.
+  // Nothing counts until the Runner has committed their Rule of Life: a
+  // draft's empty week is not a struggling one, and must never raise the
+  // terracotta alert. (Same for a Runner with no rhythms at all.)
+  if (!runner.hasCommittedRule) {
+    return _Nudge(
+      type: _NudgeType.gettingStarted,
+      message: runner.ruleItems.isEmpty
+          ? "${runner.name} hasn't set up a Rule of Life yet."
+          : "${runner.name} hasn't committed a Rule of Life yet. The rhythms below are a "
+              'draft — nothing is being counted until they commit.',
+      textReason: WitnessTextReason.gettingStarted,
+    );
+  }
   if (runner.ruleItems.isEmpty) return null;
 
-  final weekRate = runner.weekCompletionRate;
   final missedAnchor = runner.anchorMissedYesterday;
-
-  if (missedAnchor != null || weekRate < 0.5) {
+  if (missedAnchor != null) {
     return _Nudge(
       type: _NudgeType.struggling,
-      message: missedAnchor != null
-          ? '${runner.name} missed an Anchor Rhythm (${missedAnchor.title}) yesterday.'
-          : "${runner.name}'s completion has dropped below 50% this week.",
+      message: '${runner.name} missed an Anchor Rhythm (${missedAnchor.title}) yesterday.',
+      textReason: WitnessTextReason.missedAnchor,
     );
   }
 
-  if (runner.daysSinceLastCheckIn >= 2) {
+  final weekRate = runner.weekRate;
+  if (weekRate != null && weekRate < 0.5) {
+    return _Nudge(
+      type: _NudgeType.struggling,
+      message: "${runner.name} has kept fewer than half of this week's rhythms.",
+      textReason: WitnessTextReason.hardWeek,
+    );
+  }
+
+  if (runner.isDrifting) {
     return _Nudge(
       type: _NudgeType.drifting,
       message: "${runner.name} hasn't checked in recently.",
+      textReason: WitnessTextReason.goneQuiet,
     );
   }
 
-  if (weekRate > 0.9) {
-    return _Nudge(type: _NudgeType.thriving, message: '${runner.name} is having a strong week.');
+  if (weekRate != null && weekRate > 0.9) {
+    return _Nudge(
+      type: _NudgeType.thriving,
+      message: '${runner.name} is having a strong week.',
+      textReason: WitnessTextReason.thriving,
+    );
   }
 
   return null;
@@ -173,24 +190,57 @@ class _NudgeCard extends StatelessWidget {
   final VoidCallback onNavigateToConnect;
 
   Color get _accentColor => switch (nudge.type) {
+        _NudgeType.gettingStarted => AppColors.antiqueBrass,
         _NudgeType.thriving => AppColors.forestGreen,
         _NudgeType.struggling => AppColors.terracotta,
         _NudgeType.drifting => AppColors.antiqueBrass,
       };
 
   BrassGlyphKind get _glyph => switch (nudge.type) {
+        _NudgeType.gettingStarted => BrassGlyphKind.leaf,
         _NudgeType.thriving => BrassGlyphKind.trendUp,
         _NudgeType.struggling => BrassGlyphKind.exclamation,
         _NudgeType.drifting => BrassGlyphKind.clock,
       };
 
-  /// Opens the messaging app with [body] written. With no number on file for
-  /// this Runner it still opens — the Witness picks the recipient there.
-  Future<void> _sendSms(BuildContext context, String body) => launchOrNotify(
+  bool get _hasPhone => runner.phoneNumber?.trim().isNotEmpty ?? false;
+
+  /// Opens Messages addressed to the Runner, with the draft for this card's
+  /// situation written (see models/witness_messages.dart). The Witness can
+  /// change every word before sending.
+  Future<void> _sendText(BuildContext context) => launchOrNotify(
         context,
-        smsUri(runner.phoneNumber ?? '', body: body),
+        smsUri(
+          runner.phoneNumber!,
+          body: witnessTextFor(
+            nudge.textReason,
+            firstName: runner.firstName,
+            daysQuiet: runner.daysQuiet,
+          ),
+        ),
         unavailable: 'No messaging app is available on this device.',
       );
+
+  /// The card's text button — or, when the Runner has no mobile number on
+  /// file, a line saying so. (It used to open a message addressed to no one.)
+  Widget _textAction(
+    BuildContext context, {
+    required String label,
+    BookplateButtonVariant variant = BookplateButtonVariant.primary,
+  }) {
+    if (_hasPhone) {
+      return BookplateButton(
+        variant: variant,
+        onPressed: () => _sendText(context),
+        label: label,
+      );
+    }
+    return Text(
+      "${runner.firstName} hasn't added a mobile number yet, so there is no one to address a "
+      'text to. They can add it under Account & Membership in the menu.',
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -235,25 +285,16 @@ class _NudgeCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             switch (nudge.type) {
-              _NudgeType.thriving => BookplateButton(
-                  onPressed: () => _sendSms(
-                    context,
-                    "Hey ${runner.firstName}, saw you're having a great week on the Trellis. "
-                    'Proud of you!',
-                  ),
-                  label: 'Send an encouraging text',
-                ),
+              _NudgeType.gettingStarted =>
+                _textAction(context, label: 'Send an encouraging text'),
+              _NudgeType.thriving => _textAction(context, label: 'Send an encouraging text'),
               _NudgeType.struggling => Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    BookplateButton(
-                      variant: BookplateButtonVariant.danger,
-                      onPressed: () => _sendSms(
-                        context,
-                        "Hey ${runner.firstName}, just checking in on you — no pressure, I'm "
-                        'here if you want to talk.',
-                      ),
+                    _textAction(
+                      context,
                       label: 'Send a check-in text',
+                      variant: BookplateButtonVariant.danger,
                     ),
                     const SizedBox(height: 8),
                     BookplateButton(
@@ -263,14 +304,7 @@ class _NudgeCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              _NudgeType.drifting => BookplateButton(
-                  onPressed: () => _sendSms(
-                    context,
-                    "Hey ${runner.firstName}, haven't seen a check-in from you in a couple "
-                    'days. Just wanted to check in — everything okay?',
-                  ),
-                  label: 'Nudge ${runner.firstName}',
-                ),
+              _NudgeType.drifting => _textAction(context, label: 'Nudge ${runner.firstName}'),
             },
           ],
         ),
@@ -313,8 +347,9 @@ class _WeekHeatMap extends StatelessWidget {
         ? textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700)
         : textTheme.bodySmall;
 
+    // A dash, not "0%", when nothing was due (or counted yet) this week.
     Widget percent(WatchedRuleItem item) => Text(
-          '${(item.weekCompletionRate * 100).round()}%',
+          item.weekRate == null ? '—' : '${(item.weekRate! * 100).round()}%',
           style: textTheme.labelSmall?.copyWith(
             color: AppColors.forestGreen,
             fontWeight: FontWeight.w600,

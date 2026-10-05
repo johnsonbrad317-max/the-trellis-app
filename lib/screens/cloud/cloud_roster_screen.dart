@@ -93,6 +93,9 @@ class _CloudRosterScreenState extends State<CloudRosterScreen> {
           else ...[
           TextField(
             controller: _searchController,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.search,
+            autocorrect: false,
             onChanged: (value) => setState(() => _query = value),
             decoration: InputDecoration(
               hintText: 'Search Runners or Witnesses by name',

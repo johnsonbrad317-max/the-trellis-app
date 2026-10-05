@@ -93,11 +93,9 @@ class _ContextualPrompt {
 }
 
 _ContextualPrompt? _buildContextualPrompt(WatchedRunner runner) {
-  // With no rhythms yet the week's rate is "0" only because there is nothing
-  // to complete — that is not a tough week.
-  final struggling = runner.ruleItems.isNotEmpty &&
-      (runner.anchorMissedYesterday != null || runner.weekCompletionRate < 0.5);
-  if (struggling) {
+  // Never for a Runner who hasn't committed a Rule of Life (or has no rhythms):
+  // an empty week there is not a tough one. See WatchedRunner.isStruggling.
+  if (runner.isStruggling) {
     return _ContextualPrompt(
       tone: _ContextualTone.struggling,
       message: '${runner.name} has had a tough week. Suggest grabbing lunch to talk it through.',

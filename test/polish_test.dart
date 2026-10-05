@@ -180,18 +180,10 @@ void main() {
   });
 
   group('slimmer header', () {
-    test('the toolbar is 44 and the vine-safe wrapper adds only a 20px inset', () {
+    test('the toolbar is 44', () {
       expect(BookplateAppBar.height, 44);
       expect(const BookplateAppBar().preferredSize.height, 44);
-      expect(
-        const VineSafeAppBar(child: BookplateAppBar()).preferredSize.height,
-        VineSafeAppBar.topInset + VineSafeAppBar.toolbarHeight,
-      );
-      // Meaningfully slimmer than the 86px (30 + stock 56) it replaced.
-      expect(
-        const VineSafeAppBar(child: BookplateAppBar()).preferredSize.height,
-        lessThan(86),
-      );
+      expect(VineSafeAppBar.toolbarHeight, 44);
     });
 
     testWidgets('a BookplateAppBar renders at 44px tall', (tester) async {

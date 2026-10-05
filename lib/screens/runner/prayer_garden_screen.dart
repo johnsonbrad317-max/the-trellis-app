@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../models/prayer_item.dart';
 import '../../models/runner_profile.dart';
+import '../../services/prayer_photo_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_chip.dart';
 import '../../widgets/bookplate_dialog.dart';
@@ -14,9 +18,37 @@ import '../../widgets/custom_toggle.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/launch_link.dart';
 import '../../widgets/prayer_garden_field.dart';
+import '../../widgets/prayer_medallion.dart';
+import '../../widgets/prayer_photo_row.dart';
 import 'daily_prayer_screen.dart';
 
 enum _GardenView { active, answered }
+
+/// Stores [bytes] as the photo for the prayer [prayerId] and records where it
+/// went. Resolves to whether the photo is now attached; never throws — the
+/// prayer itself is already saved, so a photo that would not upload is
+/// something to mention, not a failure of the whole action.
+Future<bool> _savePrayerPhoto(RunnerProfile profile, String prayerId, Uint8List bytes) async {
+  final service = PrayerPhotoService.instance;
+  String? uploadedTo;
+  try {
+    final path = await service.upload(prayerId: prayerId, bytes: bytes);
+    uploadedTo = path;
+    // Replacing a photo reuses the same path, so there is nothing new to
+    // record on the prayer.
+    final alreadyRecorded = profile.prayerItems.any(
+      (item) => item.id == prayerId && item.photoPath == path,
+    );
+    if (!alreadyRecorded) await profile.setPrayerPhoto(prayerId, path);
+    return true;
+  } catch (error) {
+    debugPrint('Prayer photo save failed: ${error.runtimeType}');
+    // Uploaded but never recorded on the prayer: nothing would ever show or
+    // clean up that file, so take it back out.
+    if (uploadedTo != null) unawaited(service.remove(uploadedTo));
+    return false;
+  }
+}
 
 /// The Runner's Prayer Garden: active burdens vs. answered prayers, grouped
 /// into Witness Requests / People / Situations, plus the daily prayer flow.
@@ -32,6 +64,10 @@ class PrayerGardenScreen extends StatefulWidget {
 class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
   _GardenView _view = _GardenView.active;
   bool _isManaging = false;
+
+  /// Marks where the full list of prayers begins, so the field's "+N" marker
+  /// can scroll to it.
+  final GlobalKey _listKey = GlobalKey();
 
   RunnerProfile get _profile => widget.profile;
 
@@ -58,6 +94,12 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
     var shareWithWitnesses = false;
     var isSaving = false;
     String? error;
+
+    // A prayer has no id — and so nowhere to store a photo — until it has
+    // been saved, so a chosen photo waits here and is uploaded straight after
+    // the prayer is created.
+    Uint8List? photoBytes;
+    var photoSaveFailed = false;
 
     await showBookplateForm<void>(
       context,
@@ -107,14 +149,46 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
             TextField(
               controller: titleController,
               autofocus: true,
+              // A person's name is capitalised word by word; a situation's
+              // title reads as a sentence.
+              textCapitalization: category == PrayerCategory.people
+                  ? TextCapitalization.words
+                  : TextCapitalization.sentences,
+              textInputAction: TextInputAction.next,
+              // Rebuilds so the photo row's initials follow the name as typed.
+              onChanged: (_) => setDialogState(() {}),
               decoration: InputDecoration(
                 labelText: category == PrayerCategory.people ? 'Name' : 'Title',
               ),
             ),
+            if (category == PrayerCategory.people) ...[
+              const SizedBox(height: 8),
+              PrayerPhotoRow(
+                name: titleController.text,
+                photoBytes: photoBytes,
+                onPick: () async {
+                  final pick = await PrayerPhotoService.instance.pick();
+                  if (!dialogContext.mounted) return;
+                  setDialogState(() {
+                    // Too large, wrong kind, or no access to photos: said in
+                    // the form's own error line, with any earlier photo kept.
+                    if (pick.notice != null) error = pick.notice;
+                    if (pick.bytes != null) {
+                      photoBytes = pick.bytes;
+                      error = null;
+                    }
+                  });
+                },
+                onRemove: () => setDialogState(() => photoBytes = null),
+              ),
+            ],
             const SizedBox(height: 16),
+            // Several lines, so its return key stays a line break rather
+            // than "next".
             TextField(
               controller: detailsController,
               maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(labelText: 'Details'),
             ),
             if (category == PrayerCategory.people) ...[
@@ -122,6 +196,7 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
               TextField(
                 controller: phoneController,
                 keyboardType: TextInputType.phone,
+                textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(
                   labelText: 'Phone Number (optional)',
                   helperText: 'Adding a phone number allows you to quickly send an '
@@ -133,6 +208,8 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: scriptureController,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
               decoration: const InputDecoration(
                 labelText: 'Scripture (optional)',
                 hintText: 'e.g. Philippians 4:6-7',
@@ -174,8 +251,9 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
               isSaving = true;
               error = null;
             });
+            final String prayerId;
             try {
-              await _profile.addPrayerItem(
+              prayerId = await _profile.addPrayerItem(
                 category: category,
                 title: title,
                 details: detailsController.text.trim(),
@@ -188,14 +266,22 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
                     : scriptureController.text.trim(),
                 shareWithWitnesses: shareWithWitnesses,
               );
-              if (dialogContext.mounted) Navigator.pop(dialogContext);
             } catch (_) {
               if (!dialogContext.mounted) return;
               setDialogState(() {
                 isSaving = false;
                 error = "Couldn't add that to your garden. Check your connection and try again.";
               });
+              return;
             }
+            // The prayer now exists, so from here the dialog always closes:
+            // a photo that will not upload must not leave the form open
+            // inviting a second "Add" (and a duplicate prayer).
+            final photo = category == PrayerCategory.people ? photoBytes : null;
+            if (photo != null) {
+              photoSaveFailed = !await _savePrayerPhoto(_profile, prayerId, photo);
+            }
+            if (dialogContext.mounted) Navigator.pop(dialogContext);
           },
         ),
         BookplateButton(
@@ -212,6 +298,39 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
       phoneController,
       scriptureController,
     ]);
+
+    if (photoSaveFailed && mounted) {
+      showBookplateNotice(
+        context,
+        "Saved, but the photo couldn't be uploaded. You can add it again later.",
+      );
+    }
+  }
+
+  /// Opens one prayer's detail: its text, and — for a person — the photo with
+  /// its Add / Change / Remove actions. Reached by tapping the prayer's plant
+  /// in the field or its row in the list.
+  void _showPrayerDetail(String prayerId) {
+    showBookplateSheet<void>(
+      context,
+      builder: (sheetContext) => _PrayerDetailSheet(profile: _profile, prayerId: prayerId),
+    );
+  }
+
+  /// The field's "+N" marker: brings the full list into view and says so.
+  void _showFullList() {
+    final list = _listKey.currentContext;
+    if (list != null) {
+      Scrollable.ensureVisible(
+        list,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+    final count = _profile.prayerItems
+        .where((item) => item.isAnswered == (_view == _GardenView.answered))
+        .length;
+    showBookplateNotice(context, 'All $count are listed below.');
   }
 
   Future<void> _toggleAnswered(PrayerItem item) => runWithFailureNotice(
@@ -231,11 +350,16 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
       destructive: true,
     );
     if (!confirmed || !mounted) return;
-    await runWithFailureNotice(
+    final photoPath = item.photoPath;
+    final removed = await runWithFailureNotice(
       context,
       () => _profile.removePrayerItem(item.id),
       failure: "Couldn't remove that prayer. Check your connection.",
     );
+    // The profile deletes the stored photo along with the prayer; this drops
+    // what was remembered about it here (its link, and the photo itself if it
+    // was chosen this session).
+    if (removed && photoPath != null) PrayerPhotoService.instance.invalidate(photoPath);
   }
 
   void _beginDailyPrayer() {
@@ -290,14 +414,17 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
                     entries: [
                       for (final item in items)
                         GardenEntry(
+                          id: item.id,
                           title: item.title,
                           details: item.details,
                           scripture: item.scripture,
                           answeredDate: item.answeredDate,
                         ),
                     ],
+                    onEntryTap: (entry) => _showPrayerDetail(entry.id!),
+                    onShowAll: _showFullList,
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(key: _listKey, height: 24),
                   for (final category in PrayerCategory.values) ...[
                     _CategorySection(
                       category: category,
@@ -305,6 +432,7 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
                       isLocked: category == PrayerCategory.witnessRequests &&
                           _profile.isWitnessRequestsLocked,
                       isManaging: _isManaging,
+                      onOpen: (item) => _showPrayerDetail(item.id),
                       onToggleAnswered: _toggleAnswered,
                       onRemove: _remove,
                     ),
@@ -373,6 +501,8 @@ class _GardenHeader extends StatelessWidget {
     required this.onSetPrayerTime,
     required this.prayerTimeLabel,
     required this.entries,
+    required this.onEntryTap,
+    required this.onShowAll,
   });
 
   final _GardenView view;
@@ -383,6 +513,12 @@ class _GardenHeader extends StatelessWidget {
 
   /// One garden plant per prayer in the current (Active / Answered) view.
   final List<GardenEntry> entries;
+
+  /// A plant was tapped — open that prayer.
+  final ValueChanged<GardenEntry> onEntryTap;
+
+  /// The field's "+N" marker was tapped — show where the rest are.
+  final VoidCallback onShowAll;
 
   @override
   Widget build(BuildContext context) {
@@ -395,7 +531,12 @@ class _GardenHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(15),
         child: Column(
           children: [
-            PrayerGardenField(entries: entries, answered: isAnswered),
+            PrayerGardenField(
+              entries: entries,
+              answered: isAnswered,
+              onEntryTap: onEntryTap,
+              onShowAll: onShowAll,
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
               child: Row(
@@ -438,6 +579,7 @@ class _CategorySection extends StatefulWidget {
     required this.items,
     required this.isLocked,
     required this.isManaging,
+    required this.onOpen,
     required this.onToggleAnswered,
     required this.onRemove,
   });
@@ -446,6 +588,7 @@ class _CategorySection extends StatefulWidget {
   final List<PrayerItem> items;
   final bool isLocked;
   final bool isManaging;
+  final ValueChanged<PrayerItem> onOpen;
   final ValueChanged<PrayerItem> onToggleAnswered;
   final ValueChanged<PrayerItem> onRemove;
 
@@ -555,6 +698,7 @@ class _CategorySectionState extends State<_CategorySection> {
                             _PrayerItemTile(
                               item: item,
                               isManaging: widget.isManaging,
+                              onOpen: () => widget.onOpen(item),
                               onToggleAnswered: () => widget.onToggleAnswered(item),
                               onRemove: () => widget.onRemove(item),
                             ),
@@ -575,12 +719,17 @@ class _PrayerItemTile extends StatelessWidget {
   const _PrayerItemTile({
     required this.item,
     required this.isManaging,
+    required this.onOpen,
     required this.onToggleAnswered,
     required this.onRemove,
   });
 
   final PrayerItem item;
   final bool isManaging;
+
+  /// The name (and, for a person, the medallion) was tapped — open this
+  /// prayer's detail, which is where its photo is added or changed.
+  final VoidCallback onOpen;
   final VoidCallback onToggleAnswered;
   final VoidCallback onRemove;
 
@@ -589,20 +738,6 @@ class _PrayerItemTile extends StatelessWidget {
         smsUri(phone),
         unavailable: 'No messaging app is available on this device.',
       );
-
-  // TODO(image-picker): let the Runner upload or sync a real contact photo
-  // instead of this initials placeholder — no image-handling package is
-  // wired into the project yet.
-  //
-  // `characters`, not `substring`: a name that opens with an emoji or an
-  // accented letter must not be cut mid-character.
-  String get _initials {
-    final parts = item.title.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts.first.isEmpty) return '?';
-    final first = parts.first.characters.first;
-    if (parts.length == 1) return first.toUpperCase();
-    return (first + parts.last.characters.first).toUpperCase();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -637,23 +772,39 @@ class _PrayerItemTile extends StatelessWidget {
         children: [
           Row(
             children: [
-              if (isPerson) ...[
-                Container(
-                  width: 32,
-                  height: 32,
-                  alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.forestGreen,
-                  ),
-                  child: Text(
-                    _initials,
-                    style: textTheme.labelMedium?.copyWith(color: AppColors.parchmentLight),
+              // The medallion and name together are one button that opens the
+              // prayer — at least 44 high, however short the name.
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  label: item.title,
+                  hint: 'Opens this prayer',
+                  onTap: onOpen,
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onOpen,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 44),
+                      child: Row(
+                        children: [
+                          if (isPerson) ...[
+                            // The person's photo in a brass ring, or their
+                            // initials until one is added.
+                            PrayerMedallion(
+                              name: item.title,
+                              photoPath: item.photoPath,
+                              size: 40,
+                            ),
+                            const SizedBox(width: 12),
+                          ],
+                          Expanded(child: Text(item.title, style: textTheme.titleMedium)),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-              ],
-              Expanded(child: Text(item.title, style: textTheme.titleMedium)),
+              ),
               if (item.shareWithWitnesses)
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
@@ -722,6 +873,137 @@ class _PrayerItemTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// One prayer's detail, shown in a bottom sheet: what it says, when it was
+/// answered, and — for a person — their photo with Add / Change / Remove.
+/// It watches the profile, so a photo added here appears in the sheet (and
+/// in the list behind it) the moment it is saved.
+class _PrayerDetailSheet extends StatefulWidget {
+  const _PrayerDetailSheet({required this.profile, required this.prayerId});
+
+  final RunnerProfile profile;
+  final String prayerId;
+
+  @override
+  State<_PrayerDetailSheet> createState() => _PrayerDetailSheetState();
+}
+
+class _PrayerDetailSheetState extends State<_PrayerDetailSheet> {
+  /// A photo is being uploaded or removed.
+  bool _busy = false;
+
+  PrayerItem? get _item {
+    for (final item in widget.profile.prayerItems) {
+      if (item.id == widget.prayerId) return item;
+    }
+    return null;
+  }
+
+  Future<void> _choosePhoto(PrayerItem item) async {
+    final pick = await PrayerPhotoService.instance.pick();
+    if (!mounted) return;
+    final notice = pick.notice;
+    if (notice != null) showBookplateNotice(context, notice);
+    final bytes = pick.bytes;
+    if (bytes == null) return;
+
+    setState(() => _busy = true);
+    final saved = await _savePrayerPhoto(widget.profile, item.id, bytes);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!saved) {
+      showBookplateNotice(
+        context,
+        "Couldn't save that photo. Check your connection and try again.",
+      );
+    }
+  }
+
+  /// Removing a photo deletes it for good, so it asks first.
+  Future<void> _removePhoto(PrayerItem item) async {
+    final path = item.photoPath;
+    if (path == null) return;
+    final confirmed = await showBookplateConfirm(
+      context,
+      title: 'Remove This Photo?',
+      message: 'The photo for "${item.title}" will be deleted. You can add another any time.',
+      confirmLabel: 'Remove',
+      cancelLabel: 'Keep It',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    // The prayer forgets the photo first; only then is the file itself
+    // deleted (best-effort) — never a prayer left pointing at a missing photo.
+    final cleared = await runWithFailureNotice(
+      context,
+      () => widget.profile.setPrayerPhoto(item.id, null),
+      failure: "Couldn't remove that photo. Check your connection.",
+    );
+    if (cleared) await PrayerPhotoService.instance.remove(path);
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.profile,
+      builder: (context, _) {
+        final item = _item;
+        // Removed from the garden while this sheet was open.
+        if (item == null) return const SizedBox.shrink();
+        final textTheme = Theme.of(context).textTheme;
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (item.category == PrayerCategory.people) ...[
+              PrayerPhotoRow(
+                name: item.title,
+                photoPath: item.photoPath,
+                busy: _busy,
+                onPick: () => _choosePhoto(item),
+                onRemove: () => _removePhoto(item),
+              ),
+              const SizedBox(height: 12),
+              const BookplateDivider(),
+              const SizedBox(height: 16),
+            ],
+            Text(item.title, style: textTheme.headlineSmall),
+            if (item.details.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(item.details, style: textTheme.bodyMedium),
+            ],
+            if (item.scripture != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                item.scripture!,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: AppColors.antiqueBrass,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+            if (item.isAnswered) ...[
+              const SizedBox(height: 16),
+              Text(
+                item.answeredDate == null
+                    ? 'Answered'
+                    : 'Answered ${formatGardenDate(item.answeredDate!)}',
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.forestGreen,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

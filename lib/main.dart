@@ -9,11 +9,13 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
 import 'services/analytics_service.dart';
+import 'services/local_reminders.dart';
 import 'services/notification_router.dart';
 import 'services/push_notifications.dart';
 import 'services/purchases_service.dart';
 import 'services/supabase_client.dart';
 import 'theme/app_theme.dart';
+import 'widgets/keyboard_host.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +49,9 @@ Future<void> main() async {
     await PushNotifications.initialize();
     NotificationRouter.initialize();
   });
+  // On-device reminders (daily check-in, prayer list). Starting it never
+  // asks for notification permission; that happens after sign-in.
+  await _startOptional('Reminders', LocalReminders.initialize);
   await _startOptional('Analytics', AnalyticsService.initialize);
   await _startOptional('Purchases', PurchasesService.initialize);
 
@@ -74,6 +79,9 @@ class TrellisApp extends StatelessWidget {
       theme: AppTheme.light,
       navigatorKey: NotificationRouter.navigatorKey,
       scrollBehavior: const _AppScrollBehavior(),
+      // Keyboard manners (Done bar, tap-away, stray-keyboard clean-up) and the
+      // status bar's dark marks, for every route.
+      builder: (context, child) => KeyboardHost(child: child ?? const SizedBox.shrink()),
       home: const AuthGate(),
     );
   }

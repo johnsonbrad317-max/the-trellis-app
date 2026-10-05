@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resources the release build's resource shrinker (R8) must not remove.
+     flutter_local_notifications finds the reminder icon by NAME at run time
+     ("ic_stat_trellis", see lib/services/local_reminders.dart), which the
+     shrinker cannot see. If the icon were stripped, scheduled reminders would
+     silently never show. Add any further notification icon or sound here. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_trellis" />

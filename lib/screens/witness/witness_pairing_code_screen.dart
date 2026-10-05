@@ -204,9 +204,10 @@ class _WitnessPairingCodeScreenState extends State<WitnessPairingCodeScreen> {
               const SizedBox(height: 28),
               TextField(
                 controller: _codeController,
-                autofocus: true,
                 enabled: !_isSubmitting,
                 textCapitalization: TextCapitalization.characters,
+                textInputAction: TextInputAction.done,
+                autocorrect: false,
                 textAlign: TextAlign.center,
                 style: textTheme.headlineSmall?.copyWith(letterSpacing: 4),
                 decoration: const InputDecoration(labelText: 'Pairing Code'),

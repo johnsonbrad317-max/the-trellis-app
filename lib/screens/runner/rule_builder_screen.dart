@@ -69,6 +69,31 @@ class RuleBuilderScreen extends StatelessWidget {
 
   final RunnerProfile profile;
 
+  /// Where a committed Rule of Life stands: still in its first week (free to
+  /// adjust), or set (changes need a Witness). Adding is always open.
+  static String _committedNote(RunnerProfile profile) {
+    final settlesAt = profile.ruleSettlesAt;
+    if (settlesAt != null) {
+      return 'Your Rule of Life is committed. For its first week — until '
+          '${_formatDay(settlesAt)} — you can still change or remove any rhythm freely. '
+          'After that, changing or removing one needs your Witness\'s approval. '
+          'You can always add a rhythm.';
+    }
+    if (profile.witnesses.isEmpty) {
+      return 'Your Rule of Life is committed. You can always add a rhythm — and with no '
+          'Witness yet, you can still change one yourself.';
+    }
+    return 'Your Rule of Life is set. You can always add a rhythm; changing or removing one '
+        'needs your Witness\'s approval (a rhythm added later has its own first week).';
+  }
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  static String _formatDay(DateTime date) => '${_months[date.month - 1]} ${date.day}';
+
   Future<void> _pickReminderTime(BuildContext context) async {
     final time = await showBookplateTimePicker(
       context,
@@ -115,6 +140,8 @@ class RuleBuilderScreen extends StatelessWidget {
             TextField(
               controller: titleController,
               autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
               decoration: const InputDecoration(
                 labelText: 'Rhythm',
                 hintText: 'e.g. pray for 15 minutes',
@@ -141,18 +168,21 @@ class RuleBuilderScreen extends StatelessWidget {
             ),
             if (frequency == RuleFrequency.weekly) ...[
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
+              Row(
                 children: [
                   for (final weekday in weekdayOrder)
-                    BookplateChip(
-                      label: weekdayShortLabel(weekday),
-                      selected: weeklyDays.contains(weekday),
-                      compact: true,
-                      onTap: () => setDialogState(() {
-                        if (!weeklyDays.add(weekday)) weeklyDays.remove(weekday);
-                      }),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: BookplateChip(
+                          label: weekdayShortLabel(weekday),
+                          selected: weeklyDays.contains(weekday),
+                          compact: true,
+                          onTap: () => setDialogState(() {
+                            if (!weeklyDays.add(weekday)) weeklyDays.remove(weekday);
+                          }),
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -351,8 +381,7 @@ class RuleBuilderScreen extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
-                  'Your Rule of Life is committed — rhythms can be added, but removing one '
-                  'or changing its Anchor status waits for your next Season Reset.',
+                  _committedNote(profile),
                   style: textTheme.bodySmall?.copyWith(
                     color: AppColors.antiqueBrass,
                     fontStyle: FontStyle.italic,
@@ -407,8 +436,12 @@ class RuleBuilderScreen extends StatelessWidget {
               ),
               ),
             ),
-            const SizedBox(height: 32),
-            Center(child: _CommitButton(onCommit: () => _commitRule(context))),
+            // Committing happens once; afterwards the note at the top says
+            // where things stand instead of offering the button again.
+            if (!profile.hasCommittedRule) ...[
+              const SizedBox(height: 32),
+              Center(child: _CommitButton(onCommit: () => _commitRule(context))),
+            ],
             const SizedBox(height: 24),
           ],
         ),
@@ -511,7 +544,9 @@ class _CategorySectionState extends State<_CategorySection> {
                         children: [
                           Text(widget.category.label, style: textTheme.titleMedium),
                           Text(
-                            items.isEmpty ? 'No rhythms yet' : '${items.length} rhythm(s)',
+                            items.isEmpty
+                                ? 'No rhythms yet'
+                                : '${items.length} ${items.length == 1 ? 'rhythm' : 'rhythms'}',
                             style: textTheme.bodySmall,
                           ),
                         ],
@@ -534,11 +569,7 @@ class _CategorySectionState extends State<_CategorySection> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         for (final item in items) ...[
-                          _RuleItemTile(
-                            item: item,
-                            profile: profile,
-                            isCommitted: profile.hasCommittedRule,
-                          ),
+                          _RuleItemTile(item: item, profile: profile),
                           const SizedBox(height: 12),
                         ],
                         Align(
@@ -562,25 +593,30 @@ class _CategorySectionState extends State<_CategorySection> {
 }
 
 class _RuleItemTile extends StatelessWidget {
-  const _RuleItemTile({required this.item, required this.profile, required this.isCommitted});
+  const _RuleItemTile({required this.item, required this.profile});
 
   final RuleItem item;
   final RunnerProfile profile;
 
-  /// Once a Rule of Life is committed, a rhythm can't be deleted or have its
-  /// Anchor status changed until the next Season Reset — closes the
-  /// loophole where a Runner could quietly un-anchor a rhythm they're
-  /// struggling with.
-  final bool isCommitted;
+  /// A rhythm is "set" once its first week has passed (see
+  /// RunnerProfile.isRuleItemSet): from then on it can't be changed or removed
+  /// without a Witness's approval — which closes the loophole of quietly
+  /// moving a weekly rhythm's days, or un-anchoring one, to avoid ever
+  /// missing it. The database enforces the same rule.
+  bool get _isSet => !item.isChurchMandated && profile.isRuleItemSet(item);
 
-  /// DNA Rhythms are locked from deletion/un-anchoring at all times —
-  /// the Runner didn't choose them, so only their church can retire them.
-  /// [_requestUnlock] is the one way out: asking a Witness to lift it.
-  bool get _isLocked => isCommitted || item.isChurchMandated;
+  /// DNA Rhythms are locked at all times — the Runner didn't choose them, so
+  /// only their church can retire them. Either way, [_requestUnlock] is the
+  /// one way out: asking a Witness to lift it.
+  bool get _isLocked => item.isChurchMandated || _isSet;
 
-  /// Files a DNA Rhythm unlock request with one of this account's
-  /// Witnesses — auto-picked when there's only one, otherwise the Runner
-  /// chooses. See RunnerProfile.requestRuleItemUnlock.
+  /// A Witness approved changes and that approval is still running.
+  bool get _isUnlockedForNow => !item.isChurchMandated && item.isUnlockedAt(DateTime.now());
+
+  /// Files an unlock request (for a DNA Rhythm, or a rhythm that has become
+  /// set) with one of this account's Witnesses — auto-picked when there's
+  /// only one, otherwise the Runner chooses. See
+  /// RunnerProfile.requestRuleItemUnlock.
   Future<void> _requestUnlock(BuildContext context) async {
     if (profile.witnesses.isEmpty) {
       showBookplateNotice(context, 'Add a Witness before requesting an unlock.');
@@ -631,6 +667,25 @@ class _RuleItemTile extends StatelessWidget {
         i.weeklyDays = {DateTime.now().weekday};
       }
     });
+  }
+
+  Future<void> _remove(BuildContext context) async {
+    try {
+      await profile.removeRuleItem(item.id);
+    } catch (_) {
+      if (context.mounted) {
+        showBookplateNotice(context, "Couldn't remove that rhythm. Try again.");
+      }
+    }
+  }
+
+  static String _formatUnlockDeadline(DateTime until) {
+    final hour = until.hour % 12 == 0 ? 12 : until.hour % 12;
+    final minute = until.minute.toString().padLeft(2, '0');
+    final period = until.hour < 12 ? 'AM' : 'PM';
+    final now = DateTime.now();
+    final sameDay = until.year == now.year && until.month == now.month && until.day == now.day;
+    return '${sameDay ? 'today' : 'tomorrow'} at $hour:$minute $period';
   }
 
   void _toggleWeekday(BuildContext context, int weekday) {
@@ -691,7 +746,7 @@ class _RuleItemTile extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   Text(item.displayTitle, style: textTheme.titleMedium),
-                  if (item.isChurchMandated)
+                  if (_isLocked)
                     profile.pendingUnlockRuleItemIds.contains(item.id)
                         ? Text(
                             'Pending Witness Approval',
@@ -706,37 +761,39 @@ class _RuleItemTile extends StatelessWidget {
                             variant: BookplateButtonVariant.secondary,
                             onPressed: () => _requestUnlock(context),
                           )
-                  else if (!_isLocked)
+                  else
                     BookplateButton(
                       label: 'Remove',
                       compact: true,
                       variant: BookplateButtonVariant.danger,
-                      onPressed: () async {
-                        try {
-                          await profile.removeRuleItem(item.id);
-                        } catch (_) {
-                          if (context.mounted) {
-                            showBookplateNotice(context, "Couldn't remove that rhythm. Try again.");
-                          }
-                        }
-                      },
+                      onPressed: () => _remove(context),
                     ),
                 ],
               ),
             ),
-            if (item.isChurchMandated) ...[
+            if (item.isChurchMandated || _isSet) ...[
               const SizedBox(height: 6),
-              const Row(
+              Row(
                 children: [
-                  BrassLock(size: 16),
-                  SizedBox(width: 8),
+                  const BrassLock(size: 16),
+                  const SizedBox(width: 8),
                   Flexible(
                     child: BookplateTag(
-                      label: 'DNA Rhythm · Mandated',
+                      label: item.isChurchMandated ? 'DNA Rhythm · Mandated' : 'Set',
                       color: AppColors.antiqueBrass,
                     ),
                   ),
                 ],
+              ),
+            ] else if (_isUnlockedForNow) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Unlocked by your Witness until '
+                '${_formatUnlockDeadline(item.unlockedUntil!)}.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.antiqueBrass,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
             const SizedBox(height: 12),
@@ -751,26 +808,42 @@ class _RuleItemTile extends StatelessWidget {
                     label: frequency.label,
                     selected: item.frequency == frequency,
                     compact: true,
-                    enabled: !item.isChurchMandated,
+                    enabled: !_isLocked,
                     onTap: () => _setFrequency(context, frequency),
                   ),
               ],
             ),
             if (item.frequency == RuleFrequency.weekly) ...[
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
+              // One row of seven that shrinks to fit, rather than a Wrap that
+              // left Sunday alone on a second line.
+              Row(
                 children: [
                   for (final weekday in weekdayOrder)
-                    BookplateChip(
-                      label: weekdayShortLabel(weekday),
-                      selected: item.weeklyDays.contains(weekday),
-                      compact: true,
-                      enabled: !item.isChurchMandated,
-                      onTap: () => _toggleWeekday(context, weekday),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: BookplateChip(
+                          label: weekdayShortLabel(weekday),
+                          selected: item.weeklyDays.contains(weekday),
+                          compact: true,
+                          enabled: !_isLocked,
+                          onTap: () => _toggleWeekday(context, weekday),
+                        ),
+                      ),
                     ),
                 ],
+              ),
+            ],
+            if (_isSet) ...[
+              const SizedBox(height: 10),
+              Text(
+                'This rhythm is set. To change or remove it, ask a Witness to unlock it — '
+                'their approval opens it for a day.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.antiqueBrass,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
             if (item.isChurchMandated) ...[

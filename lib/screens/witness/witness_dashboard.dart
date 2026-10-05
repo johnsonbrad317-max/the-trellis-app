@@ -198,7 +198,9 @@ class WitnessDashboardScreen extends StatelessWidget {
                     // The same 180-day season the Runner sees on their own
                     // dashboard — computed once, server-side.
                     vitalityScore: selected.vitalityScore,
-                    isDrooping: selected.isSeasonDrooping || selected.missedAnchorAlert != null,
+                    // A Runner still getting started has nothing to droop.
+                    isDrooping: !selected.isGettingStarted &&
+                        (selected.isSeasonDrooping || selected.missedAnchorAlert != null),
                     hasData: selected.hasSeasonData || selected.lastCheckInDate != null,
                     showTitle: false,
                   ),
@@ -241,8 +243,13 @@ class _RunnerCarouselCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final statusColor = runner.isThriving ? AppColors.forestGreen : AppColors.terracotta;
-    final statusLabel = runner.isThriving ? 'Thriving' : 'Needs Support';
+    // "Needs Support" is only ever said of a Runner who has committed a Rule
+    // of Life and is missing it — never of one who is still setting up.
+    final (statusColor, statusLabel) = switch (runner.standing) {
+      RunnerStanding.gettingStarted => (AppColors.antiqueBrass, 'Getting Started'),
+      RunnerStanding.thriving => (AppColors.forestGreen, 'Thriving'),
+      RunnerStanding.needsSupport => (AppColors.terracotta, 'Needs Support'),
+    };
     final trimmedName = runner.name.trim();
 
     return Semantics(
@@ -458,9 +465,9 @@ class _UnlockRequestTileState extends State<_UnlockRequestTile> {
     final request = widget.request;
     final approve = await showBookplateChoice<bool>(
       context,
-      title: 'DNA Rhythm Unlock Request',
-      message: '${request.runnerName} is requesting to unlock "${request.ruleItemTitle}" so they '
-          'can edit or remove it. Approving lifts the lock immediately.',
+      title: 'Unlock Request',
+      message: '${request.runnerName} is asking to unlock "${request.ruleItemTitle}" so they '
+          'can change or remove it. Approving opens it to them for the next 24 hours.',
       options: const [(label: 'Approve', value: true), (label: 'Deny', value: false)],
       cancelLabel: 'Decide Later',
     );

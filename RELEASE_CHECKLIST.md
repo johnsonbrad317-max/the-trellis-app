@@ -462,7 +462,20 @@ Migrations have always been applied by hand; there is no CLI migration history
       `calendar-availability` function; if it is missing the function still
       works but is unlimited (the limiter fails open and logs it). Run the
       three verification queries at the bottom of the file.
-- [ ] Any file numbered above 020 that has appeared in `supabase/migrations/`
+- [ ] `021_beta_feedback.sql` — run after 020. Phone number at sign-up,
+      rhythms that become "set" 7 days after the Rule of Life is committed
+      (a Witness unlocks them), the weekly roll-up for Witnesses, and prayer
+      photos. The weekly roll-up job needs the **pg_cron** extension
+      (Dashboard → Database → Extensions); if it is off, the rest of the file
+      still applies and a notice says to enable it and re-run the one block in
+      section E.5. Afterwards **redeploy `push-notification-engine`
+      (`--no-verify-jwt`) and `delete-account`**, then run the verification
+      queries at the bottom of the file. Notes: every Runner who had already
+      committed gets a fresh 7 days of free editing from the moment this runs;
+      the roll-up goes out on Tuesdays (13:00 UTC), because Sunday's check-in
+      is made on Monday; and build 1.0.0 (2) or later should reach testers
+      within that week, since older builds don't understand "set" rhythms.
+- [ ] Any file numbered above 021 that has appeared in `supabase/migrations/`
       since this checklist was written.
 
 ### 6.2 Database secret (Vault)

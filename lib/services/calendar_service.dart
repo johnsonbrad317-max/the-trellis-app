@@ -140,9 +140,16 @@ class CalendarService extends ChangeNotifier with WidgetsBindingObserver {
         body: {'provider': provider.dbValue},
       );
       data = response.data;
+    } on FunctionException catch (error) {
+      // The server answered — so this is not a connection problem, and saying
+      // "check your connection" (as this used to, for every failure) sent
+      // people looking in the wrong place. Say what it actually is.
+      debugPrint('calendar-connect-start failed: HTTP ${error.status}');
+      throw CalendarServiceException(connectFailureMessage(error.status, error.details));
     } catch (_) {
       throw const CalendarServiceException(
-        "Couldn't start the calendar connection. Check your connection and try again.",
+        "Couldn't reach The Trellis to start the calendar connection. Check your "
+        'connection and try again.',
       );
     }
 
@@ -164,6 +171,29 @@ class CalendarService extends ChangeNotifier with WidgetsBindingObserver {
     if (!launched) {
       throw const CalendarServiceException("Couldn't open your browser to connect the calendar.");
     }
+  }
+
+  /// What to tell someone when the server refused to start a calendar
+  /// connection. [details] is the function's `{error, code}` body, when it sent
+  /// one.
+  @visibleForTesting
+  static String connectFailureMessage(int status, Object? details) {
+    final body = _asMap(details);
+    final code = body?['code'];
+    // Not deployed (404), or deployed without its calendar-service keys.
+    if (status == 404 || code == 'not_configured') {
+      return "Calendar connection isn't switched on yet — it still needs to be set up on "
+          "The Trellis's side. You can still pick meeting times by hand.";
+    }
+    if (status == 401 || code == 'unauthorized') {
+      return 'Your sign-in has expired. Sign out, sign back in, and try again.';
+    }
+    if (status == 429) {
+      return 'Too many tries in a short time. Wait a minute, then try again.';
+    }
+    final message = body?['error'];
+    if (message is String && message.trim().isNotEmpty) return message.trim();
+    return "The calendar connection couldn't be started just now. Please try again later.";
   }
 
   /// Disconnects [provider] (the server revokes access and deletes the stored

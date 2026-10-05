@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../models/phone_number.dart';
 import '../models/user_role.dart';
 import '../theme/app_colors.dart';
 import '../widgets/bookplate_app_bar.dart';
@@ -28,6 +29,7 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
 
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _churchNameController = TextEditingController();
@@ -49,6 +51,7 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
     _pageController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _churchNameController.dispose();
@@ -86,6 +89,17 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
       setState(() => _errorMessage = 'Enter your first name to continue.');
       return;
     }
+    // Required: it is how the people this person is paired with reach them.
+    final phone = normalizePhoneNumber(_phoneController.text);
+    if (phone == null) {
+      setState(() {
+        _errorMessage = _phoneController.text.trim().isEmpty
+            ? 'Enter your mobile number to continue.'
+            : "That doesn't look like a mobile number. Enter all 10 digits, or start with + "
+                'and your country code if you are outside the US.';
+      });
+      return;
+    }
     if (!_agreedToTerms) {
       setState(() {
         _errorMessage = 'You must agree to the Terms of Service, Privacy Policy, and '
@@ -101,6 +115,7 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
           email: email,
           password: password,
           name: '$firstName $lastName'.trim(),
+          phoneNumber: phone,
           churchCode: _churchCodeController.text,
         ),
       ),
@@ -213,33 +228,68 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
                         const SizedBox(height: 24),
                         TextField(
                           controller: _firstNameController,
+                          textCapitalization: TextCapitalization.words,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.givenName],
                           decoration: const InputDecoration(labelText: 'First Name'),
                         ),
                         const SizedBox(height: 16),
                         TextField(
                           controller: _lastNameController,
+                          textCapitalization: TextCapitalization.words,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.familyName],
                           decoration: const InputDecoration(labelText: 'Last Name'),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.telephoneNumber],
+                          decoration: const InputDecoration(labelText: 'Mobile Number'),
+                        ),
+                        const SizedBox(height: 6),
+                        // Said plainly, before they type it: who will see it
+                        // and what for.
+                        Text(
+                          'Required. Only the people you are paired with can see it — your '
+                          'Witness, or the Runners you walk with — so they can text you '
+                          'encouragement and check in on you. It is never shown to anyone else.',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: AppColors.forestGreen.withValues(alpha: 0.75),
+                          ),
                         ),
                         const SizedBox(height: 16),
                         TextField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          autocorrect: false,
+                          autofillHints: const [AutofillHints.email],
                           decoration: const InputDecoration(labelText: 'Email'),
                         ),
                         const SizedBox(height: 16),
                         TextField(
                           controller: _passwordController,
                           obscureText: true,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.newPassword],
                           decoration: const InputDecoration(labelText: 'Password'),
                         ),
                         const SizedBox(height: 16),
                         TextField(
                           controller: _churchNameController,
+                          textCapitalization: TextCapitalization.words,
+                          textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(labelText: 'Church Name (optional)'),
                         ),
                         const SizedBox(height: 16),
                         TextField(
                           controller: _churchCodeController,
+                          textCapitalization: TextCapitalization.characters,
+                          textInputAction: TextInputAction.done,
+                          autocorrect: false,
                           decoration: const InputDecoration(
                             labelText: 'Church-Gifted Code (optional)',
                           ),
