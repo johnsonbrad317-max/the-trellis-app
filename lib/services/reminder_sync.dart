@@ -115,9 +115,12 @@ class ReminderSync with WidgetsBindingObserver {
     );
   }
 
-  /// The prayer-list reminder: on while it is switched on and there is at
-  /// least one unanswered prayer. "Done today" means every one of them has
-  /// already been prayed for today.
+  /// The prayer reminder: on whenever it is switched on, like the check-in
+  /// reminder — a person who sets a prayer time expects to be called to pray
+  /// at it, whether or not their list has anything on it yet. "Done today"
+  /// means there are unanswered prayers and every one of them has already
+  /// been prayed for today. (It used to stay silent for an empty list, which
+  /// read as the reminder simply not working.)
   @visibleForTesting
   static ReminderPlan prayerPlanFor({
     required bool switchedOn,
@@ -126,16 +129,16 @@ class ReminderSync with WidgetsBindingObserver {
     required int minute,
     required DateTime now,
   }) {
-    final active = prayers.where((item) => !item.isAnswered).toList();
-    if (!switchedOn || active.isEmpty) return const ReminderPlan.off();
+    if (!switchedOn) return const ReminderPlan.off();
 
+    final active = prayers.where((item) => !item.isAnswered).toList();
     bool prayedToday(DateTime? date) =>
         date != null && date.year == now.year && date.month == now.month && date.day == now.day;
     return ReminderPlan(
       enabled: true,
       hour: hour,
       minute: minute,
-      doneToday: active.every((item) => prayedToday(item.lastPrayedDate)),
+      doneToday: active.isNotEmpty && active.every((item) => prayedToday(item.lastPrayedDate)),
     );
   }
 }

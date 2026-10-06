@@ -103,6 +103,48 @@ const Duration ruleSettlePeriod = Duration(days: 7);
 /// How long a Witness's approval keeps a set rhythm open for changes.
 const Duration ruleUnlockWindow = Duration(hours: 24);
 
+/// A season of the Rule of Life. Every [ruleSeasonLength] after committing,
+/// the whole Rule of Life opens again for [ruleSeasonReopenWindow]: the Runner
+/// is invited to tweak it or leave it as it is, without asking a Witness, and
+/// then it is set again for another season. The database enforces the same
+/// calendar (supabase/migrations/024).
+const Duration ruleSeasonLength = Duration(days: 180);
+const Duration ruleSeasonReopenWindow = Duration(days: 7);
+
+/// Whether [now] falls in a season-end window: at least one full season after
+/// [ruleCommittedAt], and within the first [ruleSeasonReopenWindow] of the
+/// new season. (The first week after committing is the settle period, not a
+/// season end, so it is excluded here.)
+bool isRuleSeasonReopenAt(DateTime now, DateTime? ruleCommittedAt) {
+  if (ruleCommittedAt == null || now.isBefore(ruleCommittedAt)) return false;
+  final since = now.difference(ruleCommittedAt);
+  if (since < ruleSeasonLength) return false;
+  final intoSeason = since - ruleSeasonLength * (since.inMicroseconds ~/ ruleSeasonLength.inMicroseconds);
+  return intoSeason < ruleSeasonReopenWindow;
+}
+
+/// When the current season-end window closes, or null when none is open.
+DateTime? ruleSeasonReopenEndFor(DateTime now, DateTime? ruleCommittedAt) {
+  if (!isRuleSeasonReopenAt(now, ruleCommittedAt)) return null;
+  final since = now.difference(ruleCommittedAt!);
+  final seasons = since.inMicroseconds ~/ ruleSeasonLength.inMicroseconds;
+  return ruleCommittedAt.add(ruleSeasonLength * seasons).add(ruleSeasonReopenWindow);
+}
+
+/// The sins a Runner is most often resolved to throw off (Hebrews 12:1) —
+/// offered as chips when adding one. Each is the blank in "Avoid ___", so it
+/// reads as a phrase, not a sentence.
+const throwOffPresets = [
+  'looking at pornography',
+  'getting drunk',
+  'gossip',
+  'lying or exaggerating',
+  'outbursts of anger',
+  'lustful thoughts',
+  'overspending',
+  'idle scrolling',
+];
+
 /// A single rhythm within a Runner's Rule of Life, e.g. "pray for 15
 /// minutes" under Abiding & Prayer.
 class RuleItem {
@@ -114,6 +156,7 @@ class RuleItem {
     Set<int>? weeklyDays,
     this.isAnchorRhythm = false,
     this.isChurchMandated = false,
+    this.isThrowOff = false,
     this.createdAt,
     this.unlockedUntil,
     this.dnaRhythmId,
@@ -129,6 +172,8 @@ class RuleItem {
         },
         isAnchorRhythm: row['is_anchor_rhythm'] as bool? ?? false,
         isChurchMandated: row['is_church_mandated'] as bool? ?? false,
+        // Absent before migration 024: then every rhythm is a practice.
+        isThrowOff: row['is_throw_off'] as bool? ?? false,
         createdAt: _parseTime(row['created_at']),
         // Absent on a database that predates migration 021 — then nothing is
         // ever "unlocked", which is also what the server would say.
@@ -150,6 +195,9 @@ class RuleItem {
         'weekly_days': weeklyDays.toList(),
         'is_anchor_rhythm': isAnchorRhythm,
         'is_church_mandated': isChurchMandated,
+        // Only sent when true: a database that predates migration 024 has no
+        // such column and would refuse the whole row.
+        if (isThrowOff) 'is_throw_off': true,
       };
 
   final String id;
@@ -171,6 +219,12 @@ class RuleItem {
   /// affiliation code — the Runner didn't choose this rhythm themselves,
   /// so it can't be deleted or un-anchored from the builder.
   bool isChurchMandated;
+
+  /// A sin to throw off (Hebrews 12:1) rather than a practice to keep: the
+  /// [title] is the blank in "Avoid ___" ("looking at pornography"), it is
+  /// always daily, and the check-in asks "Did you avoid ___?" — so "Yes" means
+  /// growth for every rhythm alike. Fixed when the rhythm is added.
+  final bool isThrowOff;
 
   /// When this rhythm was added (null only for one built in memory).
   final DateTime? createdAt;
@@ -205,24 +259,29 @@ class RuleItem {
     final settles = settlesAt(ruleCommittedAt);
     if (settles == null || now.isBefore(settles)) return false;
     if (!hasWitness) return false;
+    // A season has ended: the whole Rule of Life is open for a week.
+    if (isRuleSeasonReopenAt(now, ruleCommittedAt)) return false;
     return !isUnlockedAt(now);
   }
 
-  /// Positive-phrased check-in prompt, e.g. "Did you maintain Sexual
-  /// Purity?" for a title of "maintain Sexual Purity".
-  ///
-  /// Titles chosen from the Title Case presets start with a capital ("Read
-  /// Scripture for 15 Minutes"); mid-sentence that reads wrongly, so the first
-  /// letter is lowered — unless the first word is an acronym or initialism
-  /// ("AA meeting"), which is left alone.
-  String get checkInPrompt {
+  /// The title as a phrase mid-sentence: a Title Case preset ("Read Scripture
+  /// for 15 Minutes") has its first letter lowered, unless the first word is
+  /// an acronym or initialism ("AA meeting"), which is left alone.
+  String get _titleMidSentence {
     final text = title.trim();
-    if (text.length < 2) return 'Did you $text?';
+    if (text.length < 2) return text;
     final first = text[0];
     final second = text[1];
     final startsCapitalisedWord = first != first.toLowerCase() && second == second.toLowerCase();
-    return 'Did you ${startsCapitalisedWord ? first.toLowerCase() + text.substring(1) : text}?';
+    return startsCapitalisedWord ? first.toLowerCase() + text.substring(1) : text;
   }
+
+  /// Positive-phrased check-in prompt, e.g. "Did you maintain Sexual
+  /// Purity?" for a title of "maintain Sexual Purity" — and for a sin to
+  /// throw off, "Did you avoid looking at pornography?", so that "Yes" is
+  /// always the good answer.
+  String get checkInPrompt =>
+      isThrowOff ? 'Did you avoid $_titleMidSentence?' : 'Did you $_titleMidSentence?';
 
   /// Minor words that stay lowercase in Title Case unless they lead.
   static const _minorWords = {
@@ -231,10 +290,11 @@ class RuleItem {
   };
 
   /// Title-Cased for display outside the check-in question form, e.g.
-  /// "Pray for 15 Minutes" for a title of "pray for 15 minutes".
+  /// "Pray for 15 Minutes" for a title of "pray for 15 minutes"; a sin to
+  /// throw off reads "Avoid Looking at Pornography".
   String get displayTitle {
     if (title.isEmpty) return title;
-    final words = title.split(' ');
+    final words = [if (isThrowOff) 'avoid', ...title.split(' ')];
     return List.generate(words.length, (i) {
       final word = words[i];
       if (word.isEmpty) return word;

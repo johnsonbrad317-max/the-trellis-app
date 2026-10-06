@@ -260,6 +260,120 @@ class RuleBuilderScreen extends StatelessWidget {
     }
   }
 
+  /// Adding a sin to throw off (Hebrews 12:1): the blank in "Avoid ___",
+  /// always daily, optionally an Anchor. Every throw-off is filed under Body &
+  /// Purity in the database (a rhythm must have a category; this one is not
+  /// shown for throw-offs, which have their own section).
+  Future<void> _showAddThrowOffDialog(BuildContext context) async {
+    final titleController = TextEditingController();
+    var isAnchor = false;
+    String? error;
+
+    final confirmed = await showBookplateForm<bool>(
+      context,
+      title: 'A Sin to Throw Off',
+      message: '"Let us throw off everything that hinders and the sin that so easily '
+          'entangles." Name it plainly; each day you\'ll be asked whether you avoided it.',
+      bodyBuilder: (dialogContext, setDialogState) {
+        final textTheme = Theme.of(dialogContext).textTheme;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final preset in throwOffPresets)
+                  BookplateChip(
+                    label: preset,
+                    selected: titleController.text == preset,
+                    compact: true,
+                    onTap: () => setDialogState(() => titleController.text = preset),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: titleController,
+              autofocus: true,
+              // A phrase mid-sentence ("Avoid looking at…"), so no capital.
+              textCapitalization: TextCapitalization.none,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: 'Avoid…',
+                prefixText: 'Avoid ',
+                hintText: 'looking at pornography',
+                helperText: 'Checked every day. "Yes" means you avoided it.',
+              ),
+              onChanged: (_) => setDialogState(() {}),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Anchor Rhythm', style: textTheme.titleMedium),
+                      Text(
+                        'A fall here notifies your Witness immediately.',
+                        style: textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                CustomToggle(
+                  semanticLabel: 'Anchor Rhythm',
+                  value: isAnchor,
+                  onChanged: (value) => setDialogState(() => isAnchor = value),
+                ),
+              ],
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Text(error!, style: textTheme.bodySmall?.copyWith(color: AppColors.terracotta)),
+            ],
+          ],
+        );
+      },
+      actionsBuilder: (dialogContext, setDialogState) => [
+        BookplateButton(
+          label: 'Add',
+          onPressed: () {
+            if (titleController.text.trim().isEmpty) {
+              setDialogState(() => error = 'Name the sin to throw off.');
+              return;
+            }
+            Navigator.of(dialogContext).pop(true);
+          },
+        ),
+        BookplateButton(
+          label: 'Cancel',
+          variant: BookplateButtonVariant.secondary,
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+        ),
+      ],
+    );
+
+    // Stored without the "Avoid": the model supplies it wherever it is shown.
+    var title = titleController.text.trim();
+    if (title.toLowerCase().startsWith('avoid ')) title = title.substring(6).trim();
+    disposeAfterBookplateClose([titleController]);
+
+    if (confirmed != true || title.isEmpty) return;
+    try {
+      await profile.addRuleItem(
+        category: RuleCategory.bodyPurity,
+        title: title,
+        isAnchorRhythm: isAnchor,
+        isThrowOff: true,
+      );
+    } catch (_) {
+      if (context.mounted) showBookplateNotice(context, "Couldn't add that. Try again.");
+    }
+  }
+
   Future<void> _commitRule(BuildContext context) async {
     if (profile.ruleItems.isEmpty) {
       showBookplateNotice(context, 'Add at least one rhythm before committing.');
@@ -391,6 +505,19 @@ class RuleBuilderScreen extends StatelessWidget {
                   ),
                 ),
               ),
+            if (profile.ruleSeasonReopenEndsAt != null) ...[
+              SeasonReopenPlate(endsAt: profile.ruleSeasonReopenEndsAt!),
+              const SizedBox(height: 16),
+            ],
+            // Hebrews 12:1 has two movements, and so does the Rule of Life:
+            // what to put on, and what to throw off.
+            Text('Rhythms to Practice', style: textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text(
+              'Practices to put on — the race run with perseverance.',
+              style: textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
             for (final category in RuleCategory.values) ...[
               _CategorySection(
                 category: category,
@@ -400,6 +527,19 @@ class RuleBuilderScreen extends StatelessWidget {
               const SizedBox(height: 12),
             ],
             const SizedBox(height: 12),
+            Text('Sins to Throw Off', style: textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text(
+              '"Everything that hinders and the sin that so easily entangles." Each is checked '
+              'daily: did you avoid it?',
+              style: textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            _ThrowOffSection(
+              profile: profile,
+              onAddItem: () => _showAddThrowOffDialog(context),
+            ),
+            const SizedBox(height: 24),
             Text('Global Settings', style: textTheme.titleLarge),
             const SizedBox(height: 8),
             Semantics(
@@ -522,7 +662,10 @@ class _CategorySectionState extends State<_CategorySection> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final profile = widget.profile;
-    final items = profile.ruleItems.where((item) => item.category == widget.category).toList();
+    // Throw-offs have their own section below the categories.
+    final items = profile.ruleItems
+        .where((item) => item.category == widget.category && !item.isThrowOff)
+        .toList();
 
     return Container(
       decoration: BoxDecoration(
@@ -602,6 +745,107 @@ class _CategorySectionState extends State<_CategorySection> {
                   )
                 : const SizedBox(width: double.infinity),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The Runner's sins to throw off, as one open plate: each on its own tile
+/// (frequency fixed at daily), and the button to name another.
+class _ThrowOffSection extends StatelessWidget {
+  const _ThrowOffSection({required this.profile, required this.onAddItem});
+
+  final RunnerProfile profile;
+  final VoidCallback onAddItem;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final items = profile.ruleItems.where((item) => item.isThrowOff).toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.vellum,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.antiqueBrass.withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.forestGreen.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Nothing named yet. A sin named is a sin half thrown off — and your Witness '
+                'will know what to pray for.',
+                style: textTheme.bodySmall,
+              ),
+            )
+          else
+            for (final item in items) ...[
+              _RuleItemTile(item: item, profile: profile),
+              const SizedBox(height: 12),
+            ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: BookplateButton(
+              label: 'Name a Sin to Throw Off',
+              compact: true,
+              variant: BookplateButtonVariant.secondary,
+              onPressed: onAddItem,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The season-end week: a plate saying the Rule of Life is open again, and
+/// until when. Shown on the Rule of Life screen while the window is open; the
+/// shell also says so once when the Runner first arrives in the window.
+class SeasonReopenPlate extends StatelessWidget {
+  const SeasonReopenPlate({super.key, required this.endsAt});
+
+  final DateTime endsAt;
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// The plain-words message, shared with the shell's one-time notice.
+  static String message(DateTime endsAt) =>
+      'A season of your Rule of Life is complete. Until '
+      '${_months[endsAt.month - 1]} ${endsAt.day}, you\'re invited to tweak it — change or '
+      'remove any rhythm, add new ones — or leave it just as it is. After that it is set '
+      'again for the next season.';
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.parchmentLight,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.antiqueBrass, width: 1.4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('A New Season', style: textTheme.titleMedium?.copyWith(color: AppColors.antiqueBrass)),
+          const SizedBox(height: 4),
+          Text(message(endsAt), style: textTheme.bodyMedium),
         ],
       ),
     );
@@ -863,23 +1107,32 @@ class _RuleItemTile extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            Text('Frequency', style: textTheme.labelLarge),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final frequency in RuleFrequency.values)
-                  BookplateChip(
-                    label: frequency.label,
-                    selected: item.frequency == frequency,
-                    compact: true,
-                    enabled: !_isLocked,
-                    onTap: () => _setFrequency(context, frequency),
-                  ),
-              ],
-            ),
-            if (item.frequency == RuleFrequency.weekly) ...[
+            // A sin to throw off is a daily resolve; there is no schedule to
+            // choose, so the frequency chips are left off its tile.
+            if (item.isThrowOff)
+              Text(
+                'Checked every day: did you avoid it?',
+                style: textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+              )
+            else ...[
+              Text('Frequency', style: textTheme.labelLarge),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final frequency in RuleFrequency.values)
+                    BookplateChip(
+                      label: frequency.label,
+                      selected: item.frequency == frequency,
+                      compact: true,
+                      enabled: !_isLocked,
+                      onTap: () => _setFrequency(context, frequency),
+                    ),
+                ],
+              ),
+            ],
+            if (!item.isThrowOff && item.frequency == RuleFrequency.weekly) ...[
               const SizedBox(height: 12),
               // One row of seven that shrinks to fit, rather than a Wrap that
               // left Sunday alone on a second line.

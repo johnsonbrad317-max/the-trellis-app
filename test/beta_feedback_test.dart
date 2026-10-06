@@ -463,7 +463,7 @@ void main() {
       );
     });
 
-    test('prayer: off with no unanswered prayers; done once all are prayed for today', () {
+    test('prayer: on whenever switched on, even with nothing on the list; done once all are prayed for today', () {
       PrayerItem prayer({bool answered = false, DateTime? lastPrayed}) => PrayerItem(
             id: 'p${lastPrayed?.day}$answered',
             category: PrayerCategory.people,
@@ -472,10 +472,23 @@ void main() {
             lastPrayedDate: lastPrayed,
           );
 
+      // An empty (or fully answered) list is not "done": the reminder still
+      // calls the person to pray at the time they chose.
+      for (final prayers in [<PrayerItem>[], [prayer(answered: true)]]) {
+        final plan = ReminderSync.prayerPlanFor(
+          switchedOn: true,
+          prayers: prayers,
+          hour: 7,
+          minute: 0,
+          now: now,
+        );
+        expect(plan.enabled, isTrue);
+        expect(plan.doneToday, isFalse);
+      }
       expect(
         ReminderSync.prayerPlanFor(
-          switchedOn: true,
-          prayers: [prayer(answered: true)],
+          switchedOn: false,
+          prayers: [prayer()],
           hour: 7,
           minute: 0,
           now: now,

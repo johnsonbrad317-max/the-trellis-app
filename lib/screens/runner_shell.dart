@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../models/runner_profile.dart';
 import 'runner/account_settings_screen.dart';
+import 'runner/rule_builder_screen.dart' show SeasonReopenPlate;
 import '../services/reminder_sync.dart';
 import '../theme/app_colors.dart';
+import '../widgets/bookplate_dialog.dart' show showBookplateConfirm;
 import '../widgets/brass_glyph.dart';
 import '../widgets/feedback_dialog.dart';
 import '../widgets/role_switcher_button.dart';
@@ -78,13 +80,35 @@ class _RunnerShellState extends State<RunnerShell>
     // Prayer tabs have no Witnesses/prayers/meetings to show, and if it fails
     // they would otherwise sit on their "nothing here yet" panels as if that
     // were true.
-    runShellLoad(_profile.loadRunnerData);
+    runShellLoad(_profile.loadRunnerData).then((_) => _announceSeasonReopen());
     // Keeps this phone's check-in and prayer reminders in step with the
     // Runner's settings and with what they have already done today.
     _reminders = ReminderSync(_profile)..start();
   }
 
   late final ReminderSync _reminders;
+
+  /// Which season-end window the Runner has already been told about this
+  /// run of the app (its closing moment) — so the notice comes once per
+  /// arrival in a window, not on every tab change.
+  static DateTime? _seasonReopenAnnounced;
+
+  /// A season of the Rule of Life has ended: say so once, with the way to the
+  /// Rule of Life screen, where the same words stay on a plate all week.
+  Future<void> _announceSeasonReopen() async {
+    if (!mounted) return;
+    final endsAt = _profile.ruleSeasonReopenEndsAt;
+    if (endsAt == null || _seasonReopenAnnounced == endsAt) return;
+    _seasonReopenAnnounced = endsAt;
+    final open = await showBookplateConfirm(
+      context,
+      title: 'A New Season',
+      message: SeasonReopenPlate.message(endsAt),
+      confirmLabel: 'Open my Rule of Life',
+      cancelLabel: 'Leave it as it is',
+    );
+    if (open && mounted) setState(() => _tabIndex = RunnerTab.ruleOfLife.index);
+  }
 
   @override
   void dispose() {

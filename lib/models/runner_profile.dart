@@ -1515,6 +1515,7 @@ class RunnerProfile extends ChangeNotifier {
     RuleFrequency frequency = RuleFrequency.daily,
     Set<int>? weeklyDays,
     bool isAnchorRhythm = false,
+    bool isThrowOff = false,
   }) async {
     final row = await supabase
         .from('rule_items')
@@ -1522,10 +1523,13 @@ class RunnerProfile extends ChangeNotifier {
           'runner_id': id,
           'category': category.dbValue,
           'title': title,
-          'frequency': frequency.dbValue,
-          'weekly_days': (weeklyDays ?? <int>{}).toList(),
+          // A sin to throw off is a daily resolve, always.
+          'frequency': (isThrowOff ? RuleFrequency.daily : frequency).dbValue,
+          'weekly_days': isThrowOff ? const <int>[] : (weeklyDays ?? <int>{}).toList(),
           'is_anchor_rhythm': isAnchorRhythm,
           'is_church_mandated': false,
+          // Only sent when true (see RuleItem.toInsertRow).
+          if (isThrowOff) 'is_throw_off': true,
         })
         .select()
         .single();
@@ -1750,6 +1754,12 @@ class RunnerProfile extends ChangeNotifier {
         ruleCommittedAt: ruleCommittedAt,
         hasWitness: witnesses.isNotEmpty,
       );
+
+  /// When the open season-end window closes — a season (180 days) after
+  /// committing, the Rule of Life opens for a week to be tweaked or left as
+  /// it is — or null when no such window is open. See [isRuleSeasonReopenAt].
+  DateTime? get ruleSeasonReopenEndsAt =>
+      hasCommittedRule ? ruleSeasonReopenEndFor(DateTime.now(), ruleCommittedAt) : null;
 
   /// The last moment the whole Rule of Life can still be adjusted freely, or
   /// null once that has passed (or before committing).

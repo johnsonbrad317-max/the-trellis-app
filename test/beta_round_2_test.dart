@@ -83,6 +83,87 @@ void main() {
     });
   });
 
+  group('sins to throw off', () {
+    final sin = RuleItem(
+      id: 't1',
+      category: RuleCategory.bodyPurity,
+      title: 'looking at pornography',
+      isThrowOff: true,
+    );
+
+    test('reads as "Avoid …" and asks whether it was avoided, so Yes is always growth', () {
+      expect(sin.displayTitle, 'Avoid Looking at Pornography');
+      expect(sin.checkInPrompt, 'Did you avoid looking at pornography?');
+      // A practice is unchanged.
+      final practice = RuleItem(id: 'p', category: RuleCategory.abidingPrayer, title: 'Pray for 15 Minutes');
+      expect(practice.displayTitle, 'Pray for 15 Minutes');
+      expect(practice.checkInPrompt, 'Did you pray for 15 Minutes?');
+    });
+
+    test('is sent to the database only when true, and read back tolerantly', () {
+      expect(sin.toInsertRow('u').containsKey('is_throw_off'), isTrue);
+      final practice = RuleItem(id: 'p', category: RuleCategory.abidingPrayer, title: 'pray');
+      expect(practice.toInsertRow('u').containsKey('is_throw_off'), isFalse);
+      final legacy = RuleItem.fromRow({
+        'id': 'r',
+        'category': 'work_rest',
+        'title': 'rest',
+        'frequency': 'daily',
+      });
+      expect(legacy.isThrowOff, isFalse);
+    });
+
+    test('the presets are phrases for the blank in "Avoid ___"', () {
+      expect(throwOffPresets, contains('looking at pornography'));
+      expect(throwOffPresets, contains('getting drunk'));
+      for (final preset in throwOffPresets) {
+        expect(preset, equals(preset.toLowerCase()));
+        expect(preset.startsWith('avoid'), isFalse);
+      }
+    });
+  });
+
+  group('seasons of the Rule of Life', () {
+    final committed = DateTime(2026, 1, 1, 9);
+    final rhythm = RuleItem(
+      id: 'r',
+      category: RuleCategory.abidingPrayer,
+      title: 'pray',
+      createdAt: DateTime(2025, 12, 20),
+    );
+
+    test('the first week of a new season is open; the rest of a season is set', () {
+      // Day 3 is the settle period, not a season end.
+      expect(isRuleSeasonReopenAt(committed.add(const Duration(days: 3)), committed), isFalse);
+      // Day 100: mid-season.
+      expect(isRuleSeasonReopenAt(committed.add(const Duration(days: 100)), committed), isFalse);
+      // Day 180–186: the window.
+      expect(isRuleSeasonReopenAt(committed.add(const Duration(days: 180)), committed), isTrue);
+      expect(isRuleSeasonReopenAt(committed.add(const Duration(days: 186, hours: 23)), committed), isTrue);
+      expect(isRuleSeasonReopenAt(committed.add(const Duration(days: 187)), committed), isFalse);
+      // And again a season later.
+      expect(isRuleSeasonReopenAt(committed.add(const Duration(days: 362)), committed), isTrue);
+      expect(isRuleSeasonReopenAt(committed.add(const Duration(days: 370)), committed), isFalse);
+      expect(isRuleSeasonReopenAt(DateTime(2027), null), isFalse);
+    });
+
+    test('the window closes seven days into the new season', () {
+      expect(
+        ruleSeasonReopenEndFor(committed.add(const Duration(days: 182)), committed),
+        committed.add(const Duration(days: 187)),
+      );
+      expect(ruleSeasonReopenEndFor(committed.add(const Duration(days: 50)), committed), isNull);
+    });
+
+    test('a set rhythm opens for the window and is set again after it', () {
+      bool setAt(Duration after) =>
+          rhythm.isSetAt(committed.add(after), ruleCommittedAt: committed, hasWitness: true);
+      expect(setAt(const Duration(days: 100)), isTrue);
+      expect(setAt(const Duration(days: 181)), isFalse);
+      expect(setAt(const Duration(days: 190)), isTrue);
+    });
+  });
+
   group('reminder taps', () {
     test('the Runner tabs are in bottom-bar order, so a payload maps to an index', () {
       expect(RunnerTab.values, [

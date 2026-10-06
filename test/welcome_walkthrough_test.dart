@@ -10,10 +10,12 @@ import 'package:trellis/theme/app_theme.dart';
 void main() {
   const headlines = [
     'Run with endurance.',
-    'Anchor your days.',
-    'Be known.',
-    'Shepherd with clarity.',
-    'A rhythm each day, a season at a time.',
+    'Anchor Your Days.',
+    'Walk Alongside.',
+    'Shepherd with Clarity.',
+    'Keep a garden.',
+    'Find the time.',
+    'The flock, not the diary.',
     'Abide. Grow. Be Known.',
   ];
 
@@ -44,18 +46,35 @@ void main() {
       tester.getSize(find.byKey(ValueKey('welcome-dot-$i'))).width - 8;
 
   group('the deck', () {
-    test('has six slides with the headlines in order', () {
-      expect(welcomeSlides, hasLength(6));
+    test('has eight slides with the headlines in order', () {
+      expect(welcomeSlides, hasLength(8));
       expect(welcomeSlides.map((s) => s.headline), headlines);
       expect(
         welcomeSlides.map((s) => s.kicker),
-        ['THE RACE', 'THE RUNNER', 'THE WITNESS', 'THE CLOUD', 'HOW IT WORKS', 'BEGIN'],
+        [
+          'THE RACE',
+          'THE RUNNER',
+          'THE WITNESS',
+          'THE CLOUD',
+          'PRAYER',
+          'CONNECT',
+          'WHAT LEADERS SEE',
+          'BEGIN',
+        ],
       );
-      // Every slide says something: prose, or the three glyph rows.
       for (final slide in welcomeSlides) {
-        expect(slide.body != null || slide.lines.isNotEmpty, isTrue, reason: slide.headline);
+        expect(slide.body, isNotNull, reason: slide.headline);
       }
-      expect(welcomeSlides[4].lines, hasLength(3));
+    });
+
+    test("the owner's words: website cards, sins to throw off, organization not church", () {
+      expect(welcomeSlides[1].body, contains('sins to throw off'));
+      expect(welcomeSlides[2].body, startsWith('Be present for the entire journey.'));
+      expect(welcomeSlides[3].body, contains('organization'));
+      for (final slide in welcomeSlides) {
+        expect(slide.body!.toLowerCase(), isNot(contains('journal')), reason: slide.headline);
+        expect(slide.body!.toLowerCase(), isNot(contains('church')), reason: slide.headline);
+      }
     });
 
     testWidgets('Next walks through every headline in order, then reads Begin on a first run',
@@ -136,13 +155,16 @@ void main() {
       expect(currentPage(tester), 1);
       expect(dotWidth(tester, 0), 8);
       expect(dotWidth(tester, 1), 20);
-      expect(find.text('Anchor your days.'), findsOneWidget);
+      expect(find.text('Anchor Your Days.'), findsOneWidget);
 
-      // Tapping a dot goes straight to that slide.
-      await tester.tap(find.byKey(const ValueKey('welcome-dot-4')));
+      // Tapping a dot goes straight to that slide — here the leaders' sample
+      // roster, with its three status words.
+      await tester.tap(find.byKey(const ValueKey('welcome-dot-6')));
       await tester.pumpAndSettle();
-      expect(currentPage(tester), 4);
-      expect(find.text('Rule of Life — build it, commit it, check in daily.'), findsOneWidget);
+      expect(currentPage(tester), 6);
+      expect(find.text('The flock, not the diary.'), findsOneWidget);
+      expect(find.text('Full Bloom'), findsOneWidget);
+      expect(find.text('Drooping'), findsOneWidget);
     });
   });
 
