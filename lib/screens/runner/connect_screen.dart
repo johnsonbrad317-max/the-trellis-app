@@ -384,24 +384,23 @@ class _ConnectScreenState extends State<ConnectScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Connect Calendar', style: textTheme.titleMedium),
+            Text('Share Your Calendar', style: textTheme.titleMedium),
             const SizedBox(height: 2),
             Text(
-              'Google, Outlook or Apple. Available/Busy only — no event details are shared.',
+              "The calendars already on this phone. Busy or free only — no event details "
+              'are shared.',
               style: textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
             ListenableBuilder(
               listenable: CalendarService.instance,
-              builder: (context, _) {
-                final count =
-                    CalendarService.instance.connections.where((c) => c.isActive).length;
-                return BookplateButton(
-                  label: count == 0 ? 'Choose calendars' : 'Choose calendars ($count connected)',
-                  variant: BookplateButtonVariant.secondary,
-                  onPressed: () => showCalendarConnectSheet(dialogContext),
-                );
-              },
+              builder: (context, _) => BookplateButton(
+                label: CalendarService.instance.isSharing
+                    ? 'Calendar sharing is on'
+                    : 'Share my free/busy times',
+                variant: BookplateButtonVariant.secondary,
+                onPressed: () => showCalendarConnectSheet(dialogContext),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -427,7 +426,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
           label: 'Continue',
           onPressed: () {
             _saveSchedulingSetup(
-              calendarConnected: CalendarService.instance.hasActiveConnection,
+              calendarConnected: CalendarService.instance.isSharing,
               homeAddress: homeController.text.trim(),
               workAddress: workController.text.trim(),
             );

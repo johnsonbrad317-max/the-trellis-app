@@ -1,175 +1,70 @@
-/// The calendar services a person can connect (all via Cronofy on the
-/// backend — see supabase/CALENDAR_SETUP.md).
-enum CalendarProvider {
-  google,
+import 'shared_free_windows.dart';
 
-  /// A Microsoft 365 work-or-school account.
-  outlook,
-
-  /// A personal outlook.com / hotmail.com / live.com account. Microsoft signs
-  /// these in through a different door from work accounts, so it is a
-  /// separate choice (and a separate connection) rather than one "Outlook".
-  outlookPersonal,
-  apple;
-
-  /// The value stored in `calendar_connections.provider` and sent to the
-  /// Edge Functions.
-  String get dbValue => switch (this) {
-        CalendarProvider.google => 'google',
-        CalendarProvider.outlook => 'outlook',
-        CalendarProvider.outlookPersonal => 'outlook_personal',
-        CalendarProvider.apple => 'apple',
-      };
-
-  String get label => switch (this) {
-        CalendarProvider.google => 'Google Calendar',
-        CalendarProvider.outlook => 'Outlook Calendar (work or school)',
-        CalendarProvider.outlookPersonal => 'Outlook.com or Hotmail',
-        CalendarProvider.apple => 'Apple Calendar',
-      };
-
-  /// A line under the name saying which accounts this choice is for, where
-  /// the name alone could leave someone guessing.
-  String? get hint => switch (this) {
-        CalendarProvider.outlook =>
-          'For a Microsoft 365 account from your church or workplace.',
-        CalendarProvider.outlookPersonal =>
-          'For a personal Microsoft account — an outlook.com, hotmail.com or live.com address.',
-        CalendarProvider.google || CalendarProvider.apple => null,
-      };
-
-  /// The provider for a database value, or null if it isn't one we know.
-  static CalendarProvider? fromDb(Object? value) {
-    for (final provider in CalendarProvider.values) {
-      if (provider.dbValue == value) return provider;
-    }
-    return null;
-  }
-}
-
-/// Whether a connection can currently be used.
-enum CalendarConnectionStatus {
-  active,
-
-  /// The provider rejected our access (password changed, access revoked…);
-  /// the person has to connect again.
-  needsReauth;
-
-  static CalendarConnectionStatus fromDb(Object? value) =>
-      value == 'needs_reauth' ? CalendarConnectionStatus.needsReauth : CalendarConnectionStatus.active;
-}
-
-/// One connected calendar, as returned by `get_my_calendar_connections()`.
-/// Carries no tokens and no event data.
-class CalendarConnection {
-  const CalendarConnection({
-    required this.provider,
-    required this.status,
-    required this.connectedAt,
-  });
-
-  /// Throws [FormatException] for an unknown provider or malformed row.
-  factory CalendarConnection.fromJson(Map<String, dynamic> json) {
-    final provider = CalendarProvider.fromDb(json['provider']);
-    if (provider == null) {
-      throw FormatException('Unknown calendar provider: ${json['provider']}');
-    }
-    final connectedAt = json['connected_at'];
-    return CalendarConnection(
-      provider: provider,
-      status: CalendarConnectionStatus.fromDb(json['status']),
-      connectedAt: connectedAt is String ? DateTime.tryParse(connectedAt)?.toLocal() : null,
-    );
-  }
-
-  final CalendarProvider provider;
-  final CalendarConnectionStatus status;
-  final DateTime? connectedAt;
-
-  bool get isActive => status == CalendarConnectionStatus.active;
-}
-
-/// A window when both people are free, from `calendar-availability`. Times are
-/// local to this device.
+/// A window when both people are free. Times are local to this device.
 class SharedSlot {
   const SharedSlot({required this.start, required this.end});
 
-  /// Throws [FormatException] if either time is missing or unparseable.
-  factory SharedSlot.fromJson(Map<String, dynamic> json) {
-    final start = json['start'];
-    final end = json['end'];
-    final parsedStart = start is String ? DateTime.tryParse(start) : null;
-    final parsedEnd = end is String ? DateTime.tryParse(end) : null;
-    if (parsedStart == null || parsedEnd == null) {
-      throw FormatException('Malformed shared slot: $json');
-    }
-    return SharedSlot(start: parsedStart.toLocal(), end: parsedEnd.toLocal());
-  }
+  /// From a [TimeSpan] produced by [sharedFreeWindows].
+  SharedSlot.fromSpan(TimeSpan span)
+      : start = span.start.toLocal(),
+        end = span.end.toLocal();
 
   final DateTime start;
   final DateTime end;
 }
 
 /// The answer to "when are we both free?" with one other person.
+///
+/// Each person's phone uploads the busy blocks (start and end only — never a
+/// title) from the calendars already on it; the intersection is computed on
+/// the asking phone. So "sharing" here means "has uploaded busy blocks", and
+/// a sync time says how fresh they are.
 class PairAvailability {
   const PairAvailability({
     required this.suggestions,
-    required this.meConnected,
-    required this.otherConnected,
-    this.rateLimitedForSeconds,
+    required this.meSharing,
+    required this.otherSharing,
+    this.meSyncedAt,
+    this.otherSyncedAt,
   });
 
-  /// The server (or this device, remembering a recent refusal) says too many
-  /// lookups were made; nothing is known about anyone's calendars. Try again
-  /// after [retryAfterSeconds].
-  const PairAvailability.rateLimited(int retryAfterSeconds)
-      : suggestions = const [],
-        meConnected = false,
-        otherConnected = false,
-        rateLimitedForSeconds = retryAfterSeconds;
-
-  /// Tolerant of missing fields (treated as "not connected" / no slots);
-  /// malformed individual slots are skipped.
-  factory PairAvailability.fromJson(Map<String, dynamic> json) {
-    final slots = <SharedSlot>[];
-    final raw = json['suggestions'];
-    if (raw is List) {
-      for (final item in raw) {
-        if (item is! Map<String, dynamic>) continue;
-        try {
-          slots.add(SharedSlot.fromJson(item));
-        } on FormatException {
-          // Skip a malformed slot rather than losing the rest.
-        }
-      }
-    }
-    return PairAvailability(
-      suggestions: slots,
-      meConnected: json['me_connected'] == true,
-      otherConnected: json['other_connected'] == true,
-    );
-  }
-
-  /// Nobody connected / nothing known.
+  /// Nobody sharing / nothing known.
   static const PairAvailability none =
-      PairAvailability(suggestions: [], meConnected: false, otherConnected: false);
+      PairAvailability(suggestions: [], meSharing: false, otherSharing: false);
 
   final List<SharedSlot> suggestions;
-  final bool meConnected;
-  final bool otherConnected;
 
-  /// Non-null only for a [PairAvailability.rateLimited] answer.
-  final int? rateLimitedForSeconds;
+  /// Whether this phone has uploaded busy blocks.
+  final bool meSharing;
 
-  bool get isRateLimited => rateLimitedForSeconds != null;
+  /// Whether the other person's phone has.
+  final bool otherSharing;
 
-  bool get bothConnected => meConnected && otherConnected;
+  final DateTime? meSyncedAt;
+  final DateTime? otherSyncedAt;
 
-  /// "about a minute" / "about 12 minutes" for a rate-limited answer.
-  String get retryAfterLabel {
-    final seconds = rateLimitedForSeconds ?? 60;
-    if (seconds <= 90) return 'about a minute';
-    final minutes = (seconds / 60).ceil();
-    return minutes >= 60 ? 'about an hour' : 'about $minutes minutes';
+  bool get bothSharing => meSharing && otherSharing;
+
+  /// How long ago the other person's busy blocks were uploaded — in whole
+  /// days, or null when unknown or within the last day. Their phone refreshes
+  /// whenever they open the app, so an old upload means they haven't lately,
+  /// and the shared times may be optimistic.
+  int? otherStaleDays([DateTime? now]) {
+    final synced = otherSyncedAt;
+    if (synced == null) return null;
+    final days = (now ?? DateTime.now()).difference(synced).inDays;
+    return days >= 1 ? days : null;
   }
+}
+
+/// "just now", "20 minutes ago", "3 hours ago", "yesterday", "4 days ago".
+String agoLabel(DateTime time, [DateTime? now]) {
+  final diff = (now ?? DateTime.now()).difference(time);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) {
+    return diff.inMinutes == 1 ? '1 minute ago' : '${diff.inMinutes} minutes ago';
+  }
+  if (diff.inHours < 24) return diff.inHours == 1 ? '1 hour ago' : '${diff.inHours} hours ago';
+  if (diff.inDays == 1) return 'yesterday';
+  return '${diff.inDays} days ago';
 }

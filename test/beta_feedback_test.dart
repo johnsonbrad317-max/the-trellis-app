@@ -12,7 +12,6 @@ import 'package:trellis/models/runner_profile.dart';
 import 'package:trellis/models/user_role.dart';
 import 'package:trellis/models/watched_runner.dart';
 import 'package:trellis/models/witness_messages.dart';
-import 'package:trellis/services/calendar_service.dart';
 import 'package:trellis/services/reminder_sync.dart';
 import 'package:trellis/theme/app_theme.dart';
 import 'package:trellis/widgets/bookplate_app_bar.dart';
@@ -515,31 +514,6 @@ void main() {
         ).doneToday,
         isTrue,
       );
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Calendar connection failures say what they are
-  // ---------------------------------------------------------------------------
-  group('CalendarService.connectFailureMessage', () {
-    test('not deployed or not configured is "not switched on yet", not a connection problem', () {
-      for (final message in [
-        CalendarService.connectFailureMessage(404, null),
-        CalendarService.connectFailureMessage(503, {'code': 'not_configured', 'error': 'x'}),
-      ]) {
-        expect(message, contains("isn't switched on yet"));
-        expect(message.toLowerCase(), isNot(contains('check your connection')));
-      }
-    });
-
-    test('an expired session, a rate limit, and anything else', () {
-      expect(CalendarService.connectFailureMessage(401, null), contains('sign-in has expired'));
-      expect(CalendarService.connectFailureMessage(429, null), contains('Wait a minute'));
-      expect(
-        CalendarService.connectFailureMessage(500, {'error': 'Could not start. Please try again.'}),
-        'Could not start. Please try again.',
-      );
-      expect(CalendarService.connectFailureMessage(500, 'garbage'), contains('try again later'));
     });
   });
 

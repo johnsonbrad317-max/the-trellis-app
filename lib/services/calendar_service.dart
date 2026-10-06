@@ -1,10 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
-import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../models/calendar_connection.dart';
+import '../models/shared_free_windows.dart';
+import 'device_calendars.dart';
 import 'supabase_client.dart';
 
 /// A calendar operation failed in a way worth telling the person about.
@@ -18,31 +19,50 @@ class CalendarServiceException implements Exception {
   String toString() => message;
 }
 
-/// The app's window onto calendar availability. All the heavy lifting —
-/// OAuth, tokens, free/busy, intersecting two people's calendars — happens in
-/// the Supabase Edge Functions (calendar-connect-start, calendar-disconnect,
-/// calendar-availability); this class only invokes them and caches which of
-/// MY calendars are connected.
+/// Calendar sharing, the on-device way.
 ///
-/// Privacy: nothing here ever receives anyone's busy blocks or event details,
-/// nor which provider the other person uses — only shared open windows.
+/// Each person's phone reads the calendars already on it ([DeviceCalendars])
+/// and uploads the next few weeks of BUSY BLOCKS — start and end, never a
+/// title — to The Trellis (`replace_my_busy_blocks`, migration 025). When
+/// someone proposes a meeting, this phone reads its own calendars afresh,
+/// fetches the other person's uploaded blocks (`get_pair_calendar`, which
+/// answers only for an active Witness pairing) and works out the shared open
+/// windows itself ([sharedFreeWindows]). No calendar account is ever connected
+/// to The Trellis and no third party is involved.
 ///
-/// Failure model ("fail soft"): [load], [availabilityWith] and [pairStatus]
-/// never throw — they return false / null on any failure and leave cached state
-/// untouched. [connect] and [disconnect] throw [CalendarServiceException]
-/// (with a displayable message) because the person asked for them and needs
-/// to hear why it didn't work.
+/// Freshness: the upload is redone whenever the app opens or returns to the
+/// foreground and the last one is older than [refreshAfter], and whenever the
+/// person asks. A partner who hasn't opened the app for days has stale blocks;
+/// [PairAvailability.otherStaleDays] lets the screen say so.
+///
+/// Failure model ("fail soft"): [load], [syncIfStale] and [availabilityWith]
+/// never throw — they return false / null and keep cached state. [enable],
+/// [refresh] and [disable] throw [CalendarServiceException] with a displayable
+/// message, because the person asked for them and needs to hear why not.
 class CalendarService extends ChangeNotifier with WidgetsBindingObserver {
   CalendarService._();
 
   static final CalendarService instance = CalendarService._();
 
-  List<CalendarConnection> _connections = const [];
+  /// How far ahead busy blocks are uploaded. Suggestions search two weeks
+  /// ahead from a 48-hour lead; three weeks leaves room for both.
+  static const Duration uploadWindow = Duration(days: 21);
+
+  /// An upload older than this is redone on the next app open or resume.
+  static const Duration refreshAfter = Duration(hours: 6);
+
+  /// Swappable for tests.
+  @visibleForTesting
+  DeviceCalendars device = DeviceCalendars();
+
+  bool _isSharing = false;
+  DateTime? _lastSyncedAt;
+  List<String> _calendarNames = const [];
   bool _isLoaded = false;
-  bool _isLoading = false;
+  bool _isBusy = false;
   bool _observing = false;
 
-  /// The user the cached list belongs to, so a sign-out/sign-in as someone
+  /// The user the cached state belongs to, so a sign-out/sign-in as someone
   /// else never shows the previous person's calendars.
   String? _cachedForUserId;
 
@@ -57,23 +77,21 @@ class CalendarService extends ChangeNotifier with WidgetsBindingObserver {
 
   bool get _cacheIsCurrent => _cachedForUserId != null && _cachedForUserId == _currentUserId;
 
-  /// The signed-in user's connected calendars (empty until [load] succeeds).
-  List<CalendarConnection> get connections => _cacheIsCurrent ? _connections : const [];
+  /// Whether this account has uploaded busy blocks from a phone.
+  bool get isSharing => _cacheIsCurrent && _isSharing;
+
+  /// When this account last uploaded busy blocks (any device).
+  DateTime? get lastSyncedAt => _cacheIsCurrent ? _lastSyncedAt : null;
+
+  /// The calendars found on this phone, once read (empty before that or
+  /// without permission).
+  List<String> get calendarNames => _cacheIsCurrent ? _calendarNames : const [];
 
   /// True once [load] has succeeded for the current user.
   bool get isLoaded => _isLoaded && _cacheIsCurrent;
 
-  bool get isLoading => _isLoading;
-
-  /// True if at least one calendar is connected and usable.
-  bool get hasActiveConnection => connections.any((c) => c.isActive);
-
-  CalendarConnection? connectionFor(CalendarProvider provider) {
-    for (final connection in connections) {
-      if (connection.provider == provider) return connection;
-    }
-    return null;
-  }
+  /// A sync, enable or disable is in flight.
+  bool get isBusy => _isBusy;
 
   void _ensureObserving() {
     if (_observing) return;
@@ -81,226 +99,245 @@ class CalendarService extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
-  /// The OAuth round trip happens in the external browser; when the person
-  /// comes back to the app, pick up whatever changed.
+  /// Coming back to the app is the moment to bring the upload up to date.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // The observer is only registered once something has used this service
-    // (load/connect), and load() is a no-op when signed out.
-    if (state == AppLifecycleState.resumed) {
-      load();
-    }
+    if (state == AppLifecycleState.resumed) syncIfStale();
   }
 
-  /// Refreshes [connections] from the server. Returns true on success; on
-  /// failure (offline, signed out) returns false and keeps the previous list.
+  /// Refreshes the sharing state from the server, then redoes the upload if it
+  /// is stale. Returns true on success; on failure (offline, signed out)
+  /// returns false and keeps the previous state.
   Future<bool> load() async {
-    if (_isLoading) return false;
     final userId = _currentUserId;
     if (userId == null) return false;
     _ensureObserving();
-
-    _isLoading = true;
-    notifyListeners();
     try {
-      final rows = await supabase.rpc('get_my_calendar_connections');
-      final parsed = <CalendarConnection>[];
-      if (rows is List) {
-        for (final row in rows) {
-          if (row is! Map) continue;
-          try {
-            parsed.add(CalendarConnection.fromJson(Map<String, dynamic>.from(row)));
-          } on FormatException {
-            // A provider this build doesn't know about — ignore it.
-          }
-        }
-      }
-      _connections = parsed;
+      final row = await supabase
+          .from('profiles')
+          .select('calendar_connected, calendar_synced_at')
+          .eq('id', userId)
+          .single();
+      final syncedAt = _parseTime(row['calendar_synced_at']);
+      _isSharing = row['calendar_connected'] == true && syncedAt != null;
+      _lastSyncedAt = syncedAt;
       _cachedForUserId = userId;
       _isLoaded = true;
+      notifyListeners();
+      // Best effort, after the state is known.
+      await syncIfStale();
       return true;
-    } catch (_) {
+    } catch (error) {
+      debugPrint('CalendarService.load failed: ${error.runtimeType}');
       return false;
+    }
+  }
+
+  /// Redoes the upload if sharing is on and the last one is older than
+  /// [refreshAfter]. Never throws; a failed refresh keeps the old blocks.
+  Future<void> syncIfStale() async {
+    if (!isSharing || _isBusy) return;
+    final last = _lastSyncedAt;
+    if (last != null && DateTime.now().difference(last) < refreshAfter) return;
+    try {
+      await _upload();
+    } catch (error) {
+      debugPrint('CalendarService.syncIfStale failed: ${error.runtimeType}');
+    }
+  }
+
+  /// Turns sharing on: asks the phone for calendar access, then uploads. Throws
+  /// [CalendarServiceException] if access was refused or the upload failed.
+  Future<void> enable() async {
+    _ensureObserving();
+    if (!DeviceCalendars.isSupportedPlatform) {
+      throw const CalendarServiceException(
+        'Calendar sharing works from the app on your phone, where your calendars are.',
+      );
+    }
+    final allowed = await device.requestPermission();
+    if (!allowed) {
+      throw const CalendarServiceException(
+        "Calendar access wasn't allowed. To share your free and busy times, allow Calendars "
+        "for The Trellis in your phone's Settings, then try again.",
+      );
+    }
+    await _uploadOrThrow();
+  }
+
+  /// Redoes the upload now, at the person's request.
+  Future<void> refresh() async {
+    if (!await device.hasPermission()) {
+      throw const CalendarServiceException(
+        "The Trellis no longer has calendar access on this phone. Allow Calendars for The "
+        "Trellis in your phone's Settings, then try again.",
+      );
+    }
+    await _uploadOrThrow();
+  }
+
+  /// Turns sharing off: removes this account's busy blocks from The Trellis.
+  /// (Calendar permission on the phone is the phone's to revoke, in Settings.)
+  Future<void> disable() async {
+    if (_isBusy) return;
+    _isBusy = true;
+    notifyListeners();
+    try {
+      await supabase.rpc('clear_my_busy_blocks');
+      _isSharing = false;
+      _lastSyncedAt = null;
+      _cachedForUserId = _currentUserId;
+    } catch (_) {
+      throw const CalendarServiceException(
+        "Couldn't stop sharing just now. Check your connection and try again.",
+      );
     } finally {
-      _isLoading = false;
+      _isBusy = false;
       notifyListeners();
     }
   }
 
-  /// Starts connecting [provider]: asks the server for a signed authorise URL
-  /// and opens it in the external browser. Resolves once the browser has been
-  /// launched (the connection itself completes later — [load] runs when the
-  /// app resumes). Throws [CalendarServiceException] on failure.
-  Future<void> connect(CalendarProvider provider) async {
-    _ensureObserving();
-    final Object? data;
+  Future<void> _uploadOrThrow() async {
+    if (_isBusy) return;
     try {
-      final response = await supabase.functions.invoke(
-        'calendar-connect-start',
-        body: {'provider': provider.dbValue},
+      await _upload();
+    } on CalendarServiceException {
+      rethrow;
+    } on PostgrestException catch (error) {
+      debugPrint('CalendarService upload refused: ${error.code}');
+      throw CalendarServiceException(
+        error.code == '42883' || error.code == 'PGRST202'
+            ? 'Calendar sharing is not switched on yet on The Trellis\'s side (migration 025). '
+                'You can still pick meeting times by hand.'
+            : "Couldn't save your busy times. Check your connection and try again.",
       );
-      data = response.data;
-    } on FunctionException catch (error) {
-      // The server answered — so this is not a connection problem, and saying
-      // "check your connection" (as this used to, for every failure) sent
-      // people looking in the wrong place. Say what it actually is.
-      debugPrint('calendar-connect-start failed: HTTP ${error.status}');
-      throw CalendarServiceException(connectFailureMessage(error.status, error.details));
     } catch (_) {
       throw const CalendarServiceException(
-        "Couldn't reach The Trellis to start the calendar connection. Check your "
-        'connection and try again.',
+        "Couldn't save your busy times. Check your connection and try again.",
       );
-    }
-
-    final json = _asMap(data);
-    final raw = json?['authorize_url'];
-    final uri = raw is String ? Uri.tryParse(raw) : null;
-    if (uri == null || uri.scheme != 'https') {
-      throw const CalendarServiceException(
-        'Calendar connection is not available right now. Please try again later.',
-      );
-    }
-
-    bool launched;
-    try {
-      launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      launched = false;
-    }
-    if (!launched) {
-      throw const CalendarServiceException("Couldn't open your browser to connect the calendar.");
     }
   }
 
-  /// What to tell someone when the server refused to start a calendar
-  /// connection. [details] is the function's `{error, code}` body, when it sent
-  /// one.
-  @visibleForTesting
-  static String connectFailureMessage(int status, Object? details) {
-    final body = _asMap(details);
-    final code = body?['code'];
-    // Not deployed (404), or deployed without its calendar-service keys.
-    if (status == 404 || code == 'not_configured') {
-      return "Calendar connection isn't switched on yet — it still needs to be set up on "
-          "The Trellis's side. You can still pick meeting times by hand.";
-    }
-    if (status == 401 || code == 'unauthorized') {
-      return 'Your sign-in has expired. Sign out, sign back in, and try again.';
-    }
-    if (status == 429) {
-      return 'Too many tries in a short time. Wait a minute, then try again.';
-    }
-    final message = body?['error'];
-    if (message is String && message.trim().isNotEmpty) return message.trim();
-    return "The calendar connection couldn't be started just now. Please try again later.";
-  }
-
-  /// Disconnects [provider] (the server revokes access and deletes the stored
-  /// tokens), then refreshes [connections]. Throws [CalendarServiceException]
-  /// on failure.
-  Future<void> disconnect(CalendarProvider provider) async {
+  /// Reads the phone's calendars and replaces this account's uploaded blocks.
+  Future<void> _upload() async {
+    final userId = _currentUserId;
+    if (userId == null) return;
+    _isBusy = true;
+    notifyListeners();
     try {
-      await supabase.functions.invoke(
-        'calendar-disconnect',
-        body: {'provider': provider.dbValue},
-      );
-    } catch (_) {
-      throw const CalendarServiceException(
-        "Couldn't disconnect that calendar. Check your connection and try again.",
-      );
+      final now = DateTime.now();
+      // From the start of today, so a block already under way still counts.
+      final from = DateTime(now.year, now.month, now.day);
+      final to = from.add(uploadWindow);
+      final blocks = await device.busyBlocks(from: from, to: to);
+      if (blocks == null) {
+        throw const CalendarServiceException(
+          "Couldn't read this phone's calendars. Allow Calendars for The Trellis in your "
+          "phone's Settings, then try again.",
+        );
+      }
+      await supabase.rpc('replace_my_busy_blocks', params: {
+        'p_blocks': [
+          for (final block in blocks)
+            {
+              'start': block.start.toUtc().toIso8601String(),
+              'end': block.end.toUtc().toIso8601String(),
+            },
+        ],
+        'p_window_start': from.toUtc().toIso8601String(),
+        'p_window_end': to.toUtc().toIso8601String(),
+      });
+      _isSharing = true;
+      _lastSyncedAt = DateTime.now();
+      _cachedForUserId = userId;
+      _isLoaded = true;
+      _calendarNames = await device.calendarNames();
+    } finally {
+      _isBusy = false;
+      notifyListeners();
     }
-    await load();
   }
 
   /// Times in [from]..[to] when both I and [otherUserId] are free for
-  /// [durationMinutes], as shared open windows only. Returns null if the
-  /// request failed (offline, server not configured, not paired…); callers
-  /// should then fall back to manual entry. When either person has no calendar
-  /// connected the result has no suggestions and says who is missing.
-  ///
-  /// If the server has refused for too many lookups (HTTP 429), the answer is a
-  /// [PairAvailability.rateLimited] saying when to try again — and this device
-  /// remembers it, so a person tapping around doesn't keep asking while blocked.
+  /// [durationMinutes]. My side is read from this phone's calendars right now;
+  /// the other side is what their phone uploaded. Returns null if the lookup
+  /// failed (offline, server not ready, not paired…); callers then fall back
+  /// to manual entry. When either side isn't sharing the result has no
+  /// suggestions and says who is missing.
   Future<PairAvailability?> availabilityWith(
     String otherUserId, {
     required DateTime from,
     required DateTime to,
     int durationMinutes = 60,
   }) async {
-    final blockedUntil = _availabilityBlockedUntil;
-    // The limit is per signed-in person; a different user on this device starts clean.
-    if (blockedUntil != null && _availabilityBlockedForUserId == _currentUserId) {
-      final remaining = blockedUntil.difference(DateTime.now()).inSeconds;
-      if (remaining > 0) return PairAvailability.rateLimited(remaining);
-      _availabilityBlockedUntil = null;
-    }
-
     try {
-      final response = await supabase.functions.invoke(
-        'calendar-availability',
-        body: {
-          'other_user_id': otherUserId,
-          'from': from.toUtc().toIso8601String(),
-          'to': to.toUtc().toIso8601String(),
-          'duration_minutes': durationMinutes,
-          // Dart's DateTime.timeZoneName is not an IANA id, so send the UTC
-          // offset (minutes, east positive) at the start of the window; the
-          // server prefers it over any tzid.
-          'tz_offset_minutes': from.timeZoneOffset.inMinutes,
-        },
-      );
-      final json = _asMap(response.data);
+      final response = await supabase.rpc('get_pair_calendar', params: {
+        'p_other_user_id': otherUserId,
+        'p_from': from.toUtc().toIso8601String(),
+        'p_to': to.toUtc().toIso8601String(),
+      });
+      final json = _asMap(response);
       if (json == null) return null;
-      return PairAvailability.fromJson(json);
-    } on FunctionException catch (error) {
-      if (error.status != 429) return null;
-      final seconds = retryAfterSecondsFrom(error.details);
-      _availabilityBlockedUntil = DateTime.now().add(Duration(seconds: seconds));
-      _availabilityBlockedForUserId = _currentUserId;
-      return PairAvailability.rateLimited(seconds);
-    } catch (_) {
-      return null;
-    }
-  }
 
-  /// Until when the server last told this device to stop asking for shared
-  /// times (a 429); null when not blocked.
-  DateTime? _availabilityBlockedUntil;
-  String? _availabilityBlockedForUserId;
+      final otherSharing = json['other_connected'] == true;
+      final meSharingOnServer = json['me_connected'] == true;
+      final meSyncedAt = _parseTime(json['me_synced_at']);
+      final otherSyncedAt = _parseTime(json['other_synced_at']);
 
-  /// The wait, in whole seconds, from a 429 body such as
-  /// `{error, code: rate_limited, retry_after_seconds: 42}`. Missing or
-  /// nonsense values mean a minute; anything is held to between 1 second and
-  /// an hour so a bad value can never lock the feature away.
-  @visibleForTesting
-  static int retryAfterSecondsFrom(Object? details) {
-    final raw = _asMap(details)?['retry_after_seconds'];
-    if (raw is! num || !raw.isFinite || raw < 1) return 60;
-    return raw.ceil().clamp(1, 3600);
-  }
+      // My side comes from the phone itself — fresher than my upload, and
+      // the honest answer if permission has since been withdrawn.
+      final mine = meSharingOnServer ? await device.busyBlocks(from: from, to: to) : null;
+      final meSharing = mine != null;
 
-  /// Whether I and [otherUserId] have a calendar connected, without fetching
-  /// any times. Only answers for an active pairing (otherwise both false).
-  /// Returns null on failure. The result never has suggestions.
-  Future<PairAvailability?> pairStatus(String otherUserId) async {
-    try {
-      final rows = await supabase.rpc(
-        'get_calendar_pair_status',
-        params: {'p_other_user_id': otherUserId},
+      if (!(meSharing && otherSharing)) {
+        return PairAvailability(
+          suggestions: const [],
+          meSharing: meSharing,
+          otherSharing: otherSharing,
+          meSyncedAt: meSyncedAt,
+          otherSyncedAt: otherSyncedAt,
+        );
+      }
+
+      final theirs = parseBusyBlocks(json['other_busy']);
+      final windows = sharedFreeWindows(
+        busyA: mine,
+        busyB: theirs,
+        from: from,
+        to: to,
+        durationMinutes: durationMinutes,
       );
-      final row = rows is List && rows.isNotEmpty ? rows.first : rows;
-      final json = _asMap(row);
-      if (json == null) return null;
       return PairAvailability(
-        suggestions: const [],
-        meConnected: json['me_connected'] == true,
-        otherConnected: json['other_connected'] == true,
+        suggestions: [for (final window in windows) SharedSlot.fromSpan(window)],
+        meSharing: true,
+        otherSharing: true,
+        meSyncedAt: meSyncedAt,
+        otherSyncedAt: otherSyncedAt,
       );
-    } catch (_) {
+    } catch (error) {
+      debugPrint('CalendarService.availabilityWith failed: ${error.runtimeType}');
       return null;
     }
   }
+
+  /// Busy blocks from the server's `[{start, end}]` (ISO strings), as local
+  /// spans; malformed entries are skipped.
+  @visibleForTesting
+  static List<TimeSpan> parseBusyBlocks(Object? raw) {
+    if (raw is! List) return const [];
+    final spans = <TimeSpan>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final start = _parseTime(item['start']);
+      final end = _parseTime(item['end']);
+      if (start == null || end == null || !end.isAfter(start)) continue;
+      spans.add(TimeSpan(start, end));
+    }
+    return spans;
+  }
+
+  static DateTime? _parseTime(Object? value) =>
+      value is String ? DateTime.tryParse(value)?.toLocal() : null;
 
   static Map<String, dynamic>? _asMap(Object? data) {
     if (data is Map) return Map<String, dynamic>.from(data);

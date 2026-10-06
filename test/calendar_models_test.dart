@@ -1,179 +1,133 @@
+import 'package:device_calendar/device_calendar.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 import 'package:trellis/models/calendar_connection.dart';
+import 'package:trellis/models/shared_free_windows.dart';
 import 'package:trellis/services/calendar_service.dart';
+import 'package:trellis/services/device_calendars.dart';
 
+/// Calendar sharing, the on-device way: the models the screens read, what the
+/// phone's events are reduced to before upload, and how the other person's
+/// uploaded blocks are read back.
 void main() {
-  _rateLimitTests();
-
-  group('CalendarProvider', () {
-    test('maps to and from its database value', () {
-      expect(CalendarProvider.google.dbValue, 'google');
-      expect(CalendarProvider.outlook.dbValue, 'outlook');
-      expect(CalendarProvider.outlookPersonal.dbValue, 'outlook_personal');
-      expect(CalendarProvider.apple.dbValue, 'apple');
-      for (final provider in CalendarProvider.values) {
-        expect(CalendarProvider.fromDb(provider.dbValue), provider);
-      }
-      expect(CalendarProvider.fromDb('yahoo'), isNull);
-      expect(CalendarProvider.fromDb(null), isNull);
-    });
-
-    test('has the display labels', () {
-      expect(CalendarProvider.google.label, 'Google Calendar');
-      expect(CalendarProvider.outlook.label, 'Outlook Calendar (work or school)');
-      expect(CalendarProvider.outlookPersonal.label, 'Outlook.com or Hotmail');
-      // Both Outlook choices say who they are for; the other two need no note.
-      expect(CalendarProvider.outlook.hint, isNotNull);
-      expect(CalendarProvider.outlookPersonal.hint, contains('hotmail.com'));
-      expect(CalendarProvider.google.hint, isNull);
-      expect(CalendarProvider.apple.label, 'Apple Calendar');
-    });
-  });
-
-  group('CalendarConnection.fromJson', () {
-    test('parses an active connection', () {
-      final connection = CalendarConnection.fromJson({
-        'provider': 'google',
-        'status': 'active',
-        'connected_at': '2026-10-01T12:00:00+00:00',
-      });
-      expect(connection.provider, CalendarProvider.google);
-      expect(connection.status, CalendarConnectionStatus.active);
-      expect(connection.isActive, isTrue);
-      expect(connection.connectedAt!.toUtc(), DateTime.utc(2026, 10, 1, 12));
-    });
-
-    test('parses needs_reauth', () {
-      final connection = CalendarConnection.fromJson({
-        'provider': 'apple',
-        'status': 'needs_reauth',
-        'connected_at': null,
-      });
-      expect(connection.status, CalendarConnectionStatus.needsReauth);
-      expect(connection.isActive, isFalse);
-      expect(connection.connectedAt, isNull);
-    });
-
-    test('rejects an unknown provider', () {
-      expect(
-        () => CalendarConnection.fromJson({'provider': 'yahoo', 'status': 'active'}),
-        throwsFormatException,
+  group('SharedSlot', () {
+    test('is built from a shared window in local time', () {
+      final slot = SharedSlot.fromSpan(
+        TimeSpan(DateTime.utc(2026, 10, 6, 17), DateTime.utc(2026, 10, 6, 19)),
       );
-    });
-  });
-
-  group('SharedSlot.fromJson', () {
-    test('parses ISO start/end into local times', () {
-      final slot = SharedSlot.fromJson({
-        'start': '2026-10-06T17:00:00.000Z',
-        'end': '2026-10-06T19:00:00.000Z',
-      });
       expect(slot.start.toUtc(), DateTime.utc(2026, 10, 6, 17));
       expect(slot.end.toUtc(), DateTime.utc(2026, 10, 6, 19));
       expect(slot.start.isUtc, isFalse);
     });
+  });
 
-    test('rejects a missing or malformed time', () {
-      expect(() => SharedSlot.fromJson({'start': 'nope', 'end': 'nope'}), throwsFormatException);
-      expect(() => SharedSlot.fromJson({'start': '2026-10-06T17:00:00Z'}), throwsFormatException);
+  group('PairAvailability', () {
+    test('both sharing only when both have uploaded', () {
+      const both = PairAvailability(suggestions: [], meSharing: true, otherSharing: true);
+      const me = PairAvailability(suggestions: [], meSharing: true, otherSharing: false);
+      expect(both.bothSharing, isTrue);
+      expect(me.bothSharing, isFalse);
+      expect(PairAvailability.none.bothSharing, isFalse);
+    });
+
+    test("says how stale the other person's upload is, in whole days, from a day on", () {
+      final now = DateTime(2026, 10, 12, 9);
+      PairAvailability at(DateTime? synced) => PairAvailability(
+            suggestions: const [],
+            meSharing: true,
+            otherSharing: true,
+            otherSyncedAt: synced,
+          );
+      expect(at(null).otherStaleDays(now), isNull);
+      expect(at(now.subtract(const Duration(hours: 5))).otherStaleDays(now), isNull);
+      expect(at(now.subtract(const Duration(hours: 30))).otherStaleDays(now), 1);
+      expect(at(now.subtract(const Duration(days: 4, hours: 2))).otherStaleDays(now), 4);
     });
   });
 
-  group('PairAvailability.fromJson', () {
-    test('parses a full response', () {
-      final availability = PairAvailability.fromJson({
-        'suggestions': [
-          {'start': '2026-10-06T17:00:00.000Z', 'end': '2026-10-06T19:00:00.000Z'},
-          {'start': '2026-10-07T17:00:00.000Z', 'end': '2026-10-07T19:00:00.000Z'},
-        ],
-        'both_connected': true,
-        'me_connected': true,
-        'other_connected': true,
-      });
-      expect(availability.suggestions, hasLength(2));
-      expect(availability.bothConnected, isTrue);
-    });
-
-    test('empty suggestions with one side missing', () {
-      final availability = PairAvailability.fromJson({
-        'suggestions': <dynamic>[],
-        'both_connected': false,
-        'me_connected': true,
-        'other_connected': false,
-      });
-      expect(availability.suggestions, isEmpty);
-      expect(availability.meConnected, isTrue);
-      expect(availability.otherConnected, isFalse);
-      expect(availability.bothConnected, isFalse);
-    });
-
-    test('skips malformed slots and tolerates missing fields', () {
-      final availability = PairAvailability.fromJson({
-        'suggestions': [
-          {'start': 'bad', 'end': 'bad'},
-          'not a map',
-          {'start': '2026-10-06T17:00:00.000Z', 'end': '2026-10-06T19:00:00.000Z'},
-        ],
-      });
-      expect(availability.suggestions, hasLength(1));
-      expect(availability.meConnected, isFalse);
-      expect(availability.otherConnected, isFalse);
-    });
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Rate limiting (calendar-availability answers 429 when asked too often)
-// ---------------------------------------------------------------------------
-void _rateLimitTests() {
-  group('PairAvailability.rateLimited', () {
-    test('is flagged, knows nothing about calendars and has no suggestions', () {
-      const answer = PairAvailability.rateLimited(30);
-      expect(answer.isRateLimited, isTrue);
-      expect(answer.suggestions, isEmpty);
-      expect(answer.meConnected, isFalse);
-      expect(answer.otherConnected, isFalse);
-      expect(answer.bothConnected, isFalse);
-    });
-
-    test('an ordinary answer is not rate limited', () {
-      expect(PairAvailability.none.isRateLimited, isFalse);
-      expect(PairAvailability.fromJson(const {'me_connected': true}).isRateLimited, isFalse);
-    });
-
-    test('says how long to wait in plain words', () {
-      expect(const PairAvailability.rateLimited(1).retryAfterLabel, 'about a minute');
-      expect(const PairAvailability.rateLimited(90).retryAfterLabel, 'about a minute');
-      expect(const PairAvailability.rateLimited(91).retryAfterLabel, 'about 2 minutes');
-      expect(const PairAvailability.rateLimited(600).retryAfterLabel, 'about 10 minutes');
-      expect(const PairAvailability.rateLimited(3600).retryAfterLabel, 'about an hour');
+  group('agoLabel', () {
+    final now = DateTime(2026, 10, 12, 9);
+    test('reads naturally at every scale', () {
+      expect(agoLabel(now.subtract(const Duration(seconds: 20)), now), 'just now');
+      expect(agoLabel(now.subtract(const Duration(minutes: 1)), now), '1 minute ago');
+      expect(agoLabel(now.subtract(const Duration(minutes: 20)), now), '20 minutes ago');
+      expect(agoLabel(now.subtract(const Duration(hours: 1)), now), '1 hour ago');
+      expect(agoLabel(now.subtract(const Duration(hours: 3)), now), '3 hours ago');
+      expect(agoLabel(now.subtract(const Duration(hours: 30)), now), 'yesterday');
+      expect(agoLabel(now.subtract(const Duration(days: 4)), now), '4 days ago');
     });
   });
 
-  group('CalendarService.retryAfterSecondsFrom', () {
-    test('reads the server\'s wait', () {
-      expect(CalendarService.retryAfterSecondsFrom({'retry_after_seconds': 42}), 42);
-      expect(CalendarService.retryAfterSecondsFrom({'retry_after_seconds': 41.2}), 42);
-      expect(CalendarService.retryAfterSecondsFrom('{"retry_after_seconds": 7}'), 7);
+  group('CalendarService.parseBusyBlocks', () {
+    test('reads the server shape and skips anything malformed', () {
+      final blocks = CalendarService.parseBusyBlocks([
+        {'start': '2026-10-06T17:00:00+00:00', 'end': '2026-10-06T18:00:00+00:00'},
+        {'start': 'nope', 'end': '2026-10-06T18:00:00+00:00'},
+        {'start': '2026-10-06T19:00:00+00:00', 'end': '2026-10-06T19:00:00+00:00'},
+        'garbage',
+        {'start': '2026-10-07T17:00:00+00:00', 'end': '2026-10-07T18:00:00+00:00'},
+      ]);
+      expect(blocks, hasLength(2));
+      expect(blocks.first.start.toUtc(), DateTime.utc(2026, 10, 6, 17));
+      expect(blocks.last.end.toUtc(), DateTime.utc(2026, 10, 7, 18));
+      expect(CalendarService.parseBusyBlocks(null), isEmpty);
+      expect(CalendarService.parseBusyBlocks('[]'), isEmpty);
+    });
+  });
+
+  group('DeviceCalendars.busyBlocksFrom', () {
+    tz.TZDateTime at(int day, int hour, [int minute = 0]) =>
+        tz.TZDateTime.utc(2026, 10, day, hour, minute);
+    Event event({
+      required tz.TZDateTime start,
+      required tz.TZDateTime end,
+      bool allDay = false,
+      Availability availability = Availability.Busy,
+    }) =>
+        Event('cal-1', start: start, end: end, allDay: allDay, availability: availability);
+
+    final from = DateTime.utc(2026, 10, 6);
+    final to = DateTime.utc(2026, 10, 8);
+
+    test('keeps busy and tentative events, drops all-day and free ones and empties', () {
+      final blocks = DeviceCalendars.busyBlocksFrom([
+        event(start: at(6, 9), end: at(6, 10)),
+        event(start: at(6, 11), end: at(6, 12), availability: Availability.Tentative),
+        event(start: at(6, 13), end: at(6, 14), availability: Availability.Free),
+        event(start: at(7, 0), end: at(8, 0), allDay: true),
+        Event('cal-1', start: at(6, 15)),
+      ], from: from, to: to);
+      expect(blocks.map((b) => '${b.start.toUtc().hour}-${b.end.toUtc().hour}'), ['9-10', '11-12']);
     });
 
-    test('falls back to a minute for anything unusable', () {
-      for (final bad in <Object?>[
-        null,
-        'nope',
-        const {},
-        const {'retry_after_seconds': 'soon'},
-        const {'retry_after_seconds': 0},
-        const {'retry_after_seconds': -5},
-        const {'retry_after_seconds': double.nan},
-      ]) {
-        expect(CalendarService.retryAfterSecondsFrom(bad), 60, reason: '$bad');
-      }
+    test('clips to the window and merges overlapping or touching events', () {
+      final blocks = DeviceCalendars.busyBlocksFrom([
+        event(start: at(5, 22), end: at(6, 1)), // started before the window
+        event(start: at(6, 9), end: at(6, 10, 30)),
+        event(start: at(6, 10), end: at(6, 11)), // overlaps the one above
+        event(start: at(6, 11), end: at(6, 12)), // touches it
+        event(start: at(7, 23), end: at(8, 2)), // runs past the window
+        event(start: at(9, 9), end: at(9, 10)), // outside altogether
+      ], from: from, to: to);
+      expect(blocks, hasLength(3));
+      expect(blocks[0].start.toUtc(), from);
+      expect(blocks[0].end.toUtc(), DateTime.utc(2026, 10, 6, 1));
+      expect(blocks[1].start.toUtc(), DateTime.utc(2026, 10, 6, 9));
+      expect(blocks[1].end.toUtc(), DateTime.utc(2026, 10, 6, 12));
+      expect(blocks[2].end.toUtc(), to);
     });
 
-    test('never asks the person to wait more than an hour', () {
-      expect(CalendarService.retryAfterSecondsFrom({'retry_after_seconds': 999999}), 3600);
+    test('says nothing about how many events there were', () {
+      final one = DeviceCalendars.busyBlocksFrom([event(start: at(6, 9), end: at(6, 12))], from: from, to: to);
+      final three = DeviceCalendars.busyBlocksFrom([
+        event(start: at(6, 9), end: at(6, 10)),
+        event(start: at(6, 10), end: at(6, 11)),
+        event(start: at(6, 11), end: at(6, 12)),
+      ], from: from, to: to);
+      expect(three.length, one.length);
+      expect(three.single.start, one.single.start);
+      expect(three.single.end, one.single.end);
     });
   });
 }

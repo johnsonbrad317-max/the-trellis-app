@@ -18,8 +18,8 @@
 //
 // What can NOT stop the deletion (Apple requires that deletion actually
 // happens on request): a slow, failing or unconfigured push engine, a failed
-// profile/pairing lookup, a slow Cronofy, or a storage problem while removing
-// photos. Each of those courtesy steps is best effort and strictly time-boxed
+// profile/pairing lookup, or a storage problem while removing photos. Each of
+// those courtesy steps is best effort and strictly time-boxed
 // (8 s per call, 12 s for all of it, run side by side), then the account is
 // deleted regardless. (If photo removal fails, the files are left behind with
 // no owner; 021's verification block has the query that finds them.)
@@ -31,10 +31,8 @@
 // Secrets:
 //   PUSH_ENGINE_WEBHOOK_SECRET   same value the push engine checks; without it
 //                                Witnesses are simply not notified.
-//   CRONOFY_CLIENT_ID, CRONOFY_CLIENT_SECRET, CRONOFY_DATA_CENTER
-//                                optional — only used to revoke the user's
-//                                calendar grants at Cronofy before their stored
-//                                tokens are deleted with the account.
+// (Calendar busy blocks — migration 025 — are plain rows that cascade away
+// with the profile; there is no third-party grant to revoke any more.)
 // SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are injected
 // automatically by the platform for every Edge Function.
 //
@@ -44,7 +42,6 @@
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { authenticate } from '../_shared/auth.ts';
-import { revokeToken } from '../_shared/cronofy.ts';
 import {
   describeError,
   discardBody,
@@ -57,7 +54,7 @@ import {
   methodNotAllowed,
 } from '../_shared/http.ts';
 
-/// How long any single best-effort courtesy call (push engine, Cronofy revoke)
+/// How long any single best-effort courtesy call (push engine, photo removal)
 /// may take.
 const COURTESY_TIMEOUT_MS = 8_000;
 /// Hard ceiling on ALL the courtesy work together (lookups included); when it
@@ -130,45 +127,6 @@ async function notifyWitnesses(
   }
 }
 
-/// Revokes the user's calendar grants at Cronofy while we still hold the
-/// tokens (the tokens themselves are purged from Vault by the cascade when the
-/// account is deleted). Never throws.
-async function revokeCalendarGrants(admin: SupabaseClient, userId: string): Promise<void> {
-  try {
-    const { data, error } = await admin.rpc('calendar_read_tokens', { p_user_id: userId });
-    if (error) {
-      // Includes "function does not exist" on a project without the calendar
-      // migration — nothing to revoke there.
-      console.error('delete-account: could not read calendar connections (skipping revoke):', describeError(error));
-      return;
-    }
-    const rows = (Array.isArray(data) ? data : []) as Array<{ refresh_token?: unknown; access_token?: unknown }>;
-    const tokens = rows
-      .map((row) => (typeof row.refresh_token === 'string' && row.refresh_token
-        ? row.refresh_token
-        : typeof row.access_token === 'string' && row.access_token
-        ? row.access_token
-        : null))
-      .filter((token): token is string => token !== null)
-      .slice(0, 3);
-    if (tokens.length === 0) return;
-
-    const deadlineMs = Date.now() + COURTESY_TIMEOUT_MS;
-    const results = await Promise.allSettled(
-      tokens.map((token) => revokeToken(token, { timeoutMs: COURTESY_TIMEOUT_MS, deadlineMs })),
-    );
-    const failed = results.filter((result) => result.status === 'rejected');
-    if (failed.length > 0) {
-      console.error(
-        `delete-account: ${failed.length} of ${results.length} calendar revocations failed (continuing):`,
-        [...new Set(failed.map((result) => describeError((result as PromiseRejectedResult).reason)))].join('; '),
-      );
-    }
-  } catch (error) {
-    console.error('delete-account: calendar revoke step failed (continuing):', describeError(error));
-  }
-}
-
 /// The kind of failure only ("StorageApiError", "TimeoutError") — never its
 /// message, which can quote a path.
 function errorClass(error: unknown): string {
@@ -228,8 +186,8 @@ async function removePrayerPhotos(admin: SupabaseClient, userId: string): Promis
   }
 }
 
-/// Notify the Witnesses, revoke calendar grants and remove prayer photos, side
-/// by side. Resolves 'done' whatever happens inside — it never rejects.
+/// Notify the Witnesses and remove prayer photos, side by side. Resolves
+/// 'done' whatever happens inside — it never rejects.
 async function courtesySteps(admin: SupabaseClient, supabaseUrl: string, userId: string): Promise<'done'> {
   try {
     const notify = (async () => {
@@ -263,7 +221,6 @@ async function courtesySteps(admin: SupabaseClient, supabaseUrl: string, userId:
 
     const results = await Promise.allSettled([
       notify,
-      revokeCalendarGrants(admin, userId),
       removePrayerPhotos(admin, userId),
     ]);
     for (const result of results) {

@@ -1,4 +1,4 @@
-// Caller authentication for the user-JWT functions (calendar-*, submit-feedback,
+// Caller authentication for the user-JWT functions (submit-feedback,
 // delete-account): an anon-key client carrying the caller's own Authorization
 // header is used ONLY to establish who is asking (auth.getUser() verifies the
 // token with the auth server — a forged, expired or deleted-user token is

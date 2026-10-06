@@ -401,11 +401,11 @@ workflows:
 #          #!/usr/bin/env bash
 #          set -euo pipefail
 #          # JWT verification ON (called by signed-in app users):
-#          for fn in calendar-connect-start calendar-disconnect calendar-availability delete-account submit-feedback; do
+#          for fn in delete-account submit-feedback; do
 #            npx --yes supabase@latest functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
 #          done
-#          # JWT verification OFF (authenticate with their own shared secret / signed state):
-#          for fn in push-notification-engine revenuecat-webhook calendar-oauth-callback; do
+#          # JWT verification OFF (authenticate with their own shared secret):
+#          for fn in push-notification-engine revenuecat-webhook; do
 #            npx --yes supabase@latest functions deploy "$fn" --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
 #          done
 #      # - name: Push database migrations  (KEEP DISABLED - read the warning above)

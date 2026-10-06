@@ -15,11 +15,18 @@
          permission is declared on purpose; reminders use inexact alarms. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
+    <!-- Calendar sharing (device_calendar): with the person's say-so the app
+         reads the calendars on this phone and shares only when they are busy
+         or free — never a title, place or guest. The plugin asks for READ and
+         WRITE together (it is one permission group on Android); the app only
+         ever reads. Both are runtime permissions: the person is asked the
+         first time they turn sharing on. Declare in Play's Data safety form as
+         "Calendar events — app functionality, shared (busy/free only)". -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <uses-permission android:name="android.permission.WRITE_CALENDAR"/>
+
     <!-- Deliberately NOT declared (least privilege; each one must be justified
          in Google Play's Data safety form and is shown on the store listing):
-           * READ_CALENDAR / WRITE_CALENDAR: add_2_calendar hands the event to
-             the user's calendar app with an ACTION_INSERT intent, which needs
-             no permission. The app never reads or writes the calendar itself.
            * ACCESS_COARSE_LOCATION / ACCESS_FINE_LOCATION: nothing in the app
              reads device location (meeting places are typed, or picked with
              Google Places autocomplete over HTTPS).

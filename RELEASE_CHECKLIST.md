@@ -233,11 +233,12 @@ Points to settle:
       approximate location from the IP address on its servers unless that is
       disabled; switch on "Discard client IP data" in the PostHog project, or
       declare **Coarse Location** (Analytics).
-- [ ] **Calendar:** connecting a calendar goes through Cronofy with the
-      free/busy scope only; busy times are fetched server-side per request and
-      not stored, but the access tokens are stored (Supabase Vault). Describe
-      this in the privacy policy; declare it under **Other Data Types** if your
-      counsel wants the label to mention it.
+- [ ] **Calendar:** with the person's permission the app reads the calendars on
+      their phone and uploads only the start/end of busy periods for the next
+      21 days (`calendar_busy_blocks`, migration 025) — no titles, no account,
+      no third party. Declare it as **Other Data Types** → calendar busy times,
+      app functionality, linked to the user; the suggested privacy-policy
+      paragraph is in `supabase/CALENDAR_SETUP.md`.
 - [ ] Third-party SDK disclosures to cross-check: Firebase (Messaging /
       Installations), RevenueCat, PostHog, Supabase.
 - [ ] **Privacy manifest:** every plugin in the build ships its own
@@ -346,7 +347,7 @@ Google's API cannot create the first release of a new app.
   Data is encrypted in transit (HTTPS). Users can request deletion in the app;
   Play also requires a **web URL where account deletion can be requested** —
   publish one and enter it in the form. ("Shared" is No on the basis that
-  Supabase, Firebase, RevenueCat, PostHog, Cronofy and Resend act as service
+  Supabase, Firebase, RevenueCat, PostHog and Resend act as service
   providers processing on your behalf — confirm with counsel.)
 - [ ] The app requests only `INTERNET` and `POST_NOTIFICATIONS` (plus what
       Firebase Messaging adds: `WAKE_LOCK`, `ACCESS_NETWORK_STATE`, and what
@@ -453,14 +454,15 @@ Migrations have always been applied by hand; there is no CLI migration history
       SQL and add it to `supabase/migrations/`, or record what it did.
       **[UNVERIFIED]** whether it is applied.
 - [ ] `016_feedback_and_dna_propagation.sql`
-- [ ] `017_calendar_availability.sql` (needs Supabase Vault — on by default)
+- [ ] `017_calendar_availability.sql` (needs Supabase Vault — on by default;
+      everything it creates is removed again by 025, but 019 and 022 expect it
+      to have run, so keep the order)
 - [ ] `018_roster_score_permission_and_feedback_grants.sql`
 - [ ] `019_release_audit_hardening.sql` — must run after 011–018 (and 015).
       It fixes a sign-up blocker; run the verification queries at the bottom.
-- [ ] `020_edge_rate_limits.sql` — the calendar-availability rate limit (6 a
-      minute, 40 an hour, per person). Run it **before** deploying the updated
-      `calendar-availability` function; if it is missing the function still
-      works but is unlimited (the limiter fails open and logs it). Run the
+- [ ] `020_edge_rate_limits.sql` — the shared Edge Function rate limiter
+      (`edge_rate_limit_hit`). Its first user, calendar-availability, is gone
+      since 025; the table stays for any function that adopts it. Run the
       three verification queries at the bottom of the file.
 - [ ] `021_beta_feedback.sql` — run after 020. Phone number at sign-up,
       rhythms that become "set" 7 days after the Rule of Life is committed
@@ -488,6 +490,22 @@ Migrations have always been applied by hand; there is no CLI migration history
       walkthrough once — intended). If pg_cron is off, a notice says to enable
       it and re-run the one block in section D.2. Run the verification queries
       in section H (every dry run there rolls back).
+- [ ] `025_device_calendars.sql` — run after 023 and 024. Replaces the Cronofy
+      calendar integration (017/022) with on-device calendars: new table
+      `calendar_busy_blocks` (start/end only, no client access),
+      `profiles.calendar_synced_at` (read-only for clients), and the RPCs
+      `replace_my_busy_blocks`, `clear_my_busy_blocks` and `get_pair_calendar`.
+      It first **deletes every `calendar_connections` row** (so 017's purge
+      trigger removes the OAuth tokens from Vault), then drops both 017 tables
+      and all eleven 017/022 functions, sweeps any leftover `calendar % token %`
+      Vault secrets and the `calendar-*` rows in `edge_rate_limits`. Afterwards
+      delete the four Cronofy Edge Functions (`calendar-connect-start`,
+      `calendar-oauth-callback`, `calendar-disconnect`, `calendar-availability`)
+      and redeploy `delete-account` once its `calendar_read_tokens` courtesy
+      step is removed (until then it logs one harmless error per deletion and
+      continues). A re-run of 019 prints "is not present" notices for the nine
+      removed calendar functions — expected. Run the verification queries in
+      section H (every dry run there rolls back).
 - [ ] Any file numbered above 021 that has appeared in `supabase/migrations/`
       since this checklist was written.
 
@@ -508,26 +526,22 @@ Migrations have always been applied by hand; there is no CLI migration history
 | `REVENUECAT_WEBHOOK_SECRET` | revenuecat-webhook |
 | `RESEND_API_KEY` | submit-feedback (sending domain `unhinderedlives.com` must be verified in Resend) |
 | `FEEDBACK_TO`, `FEEDBACK_FROM` | submit-feedback (optional; defaults in the function) |
-| `CRONOFY_CLIENT_ID`, `CRONOFY_CLIENT_SECRET`, `CRONOFY_DATA_CENTER` | calendar functions |
-| `CALENDAR_OAUTH_REDIRECT_URI` | calendar-connect-start, calendar-oauth-callback |
-| `CALENDAR_STATE_SECRET` | calendar-connect-start, calendar-oauth-callback |
-| `CALENDAR_RESULT_REDIRECT_URL` | calendar-oauth-callback (optional; see `supabase/CALENDAR_SETUP.md`) |
+
+No calendar secrets any more: since migration 025 calendar sharing runs on the
+phone. If `CRONOFY_*`, `CALENDAR_OAUTH_REDIRECT_URI`, `CALENDAR_STATE_SECRET`
+or `CALENDAR_RESULT_REDIRECT_URL` are still set, unset them
+(`supabase secrets unset …`; the exact line is in `supabase/CALENDAR_SETUP.md`).
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are
 injected automatically.
 
 ### 6.4 Deploy the functions (flags are from each function's header comment)
 
-JWT verification **off** — these authenticate with their own shared secret or
-signed state:
+JWT verification **off** — these authenticate with their own shared secret:
 - [ ] `supabase functions deploy push-notification-engine --no-verify-jwt`
 - [ ] `supabase functions deploy revenuecat-webhook --no-verify-jwt`
-- [ ] `supabase functions deploy calendar-oauth-callback --no-verify-jwt`
 
 JWT verification **on** (the default) — called by signed-in app users:
-- [ ] `supabase functions deploy calendar-connect-start`
-- [ ] `supabase functions deploy calendar-disconnect`
-- [ ] `supabase functions deploy calendar-availability`
 - [ ] `supabase functions deploy submit-feedback`
 - [ ] `supabase functions deploy delete-account` — its header gives no deploy
       line; it requires the caller's session and is invoked by the app with
@@ -535,12 +549,13 @@ JWT verification **on** (the default) — called by signed-in app users:
 
 There is no `supabase/config.toml`, so these flags are not recorded anywhere
 but here and in the function headers: a redeploy without `--no-verify-jwt`
-silently turns verification back on and breaks push, the RevenueCat webhook
-and calendar connection.
+silently turns verification back on and breaks push and the RevenueCat webhook.
+
+The four Cronofy functions (`calendar-connect-start`, `calendar-oauth-callback`,
+`calendar-disconnect`, `calendar-availability`) are deleted from the project
+after 025 (`supabase functions delete <name>`); nothing deploys them.
 
 ### 6.5 Other
-- [ ] Cronofy application created and its redirect URI registered
-      (`supabase/CALENDAR_SETUP.md`).
 - [ ] Auth settings reviewed (email confirmation on/off, Site URL, password
       rules). **[UNVERIFIED]** — not inspected.
 
@@ -580,13 +595,20 @@ Calendar
       iPhone running iOS 15 or 16 the calendar permission prompt appears
       first; tap the location field in the sheet and make sure nothing
       crashes.
-- [ ] Connect a calendar (Google / Outlook / Apple) through the browser and
-      return to the app; suggested times appear for a paired couple.
-- [ ] Rate limit: open the meeting scheduler and tap "Choose calendars" then
-      close it, 7 times inside a minute. The suggestions area switches to "You've
-      checked calendars a lot just now. Try again in about a minute, or pick a
-      time below." — no error banner, and picking a time still works. (Needs
-      migration 020.)
+- [ ] Calendar sharing: menu → Calendars → "Share my free/busy times". The
+      phone's calendar permission prompt appears once (iOS 17+: full access);
+      the plate turns to "Sharing · updated just now" and lists the phone's
+      calendars. Deny the prompt on a second device: the notice says how to
+      allow it in Settings, nothing crashes.
+- [ ] Both halves of a paired couple sharing: open the meeting scheduler on
+      either side — "Times you both have free" chips appear, none of them
+      overlapping a real event on either phone, none outside 8 a.m.–9 p.m.,
+      at most three per day. With one side not sharing the line reads
+      "Your Witness/Runner isn't sharing a calendar yet…" and picking a time by
+      hand still works.
+- [ ] "Stop sharing" removes the plate's calendars and the other phone's
+      suggestions on its next lookup (`select count(*) from calendar_busy_blocks
+      where user_id = …` → 0).
 
 Push notifications
 - [ ] The permission prompt appears after sign-in (iOS, Android 13+).

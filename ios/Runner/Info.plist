@@ -79,17 +79,19 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
-	<!-- "Add to calendar" (add_2_calendar) presents Apple's own new-event
-	     sheet (EKEventEditViewController).
-	       * iOS 15-16: the plugin asks for calendar access first, so
-	         NSCalendarsUsageDescription is REQUIRED (missing = crash).
-	       * iOS 17+: the sheet runs out of process and the plugin asks for
-	         nothing; the write-only string is declared defensively so a
-	         future plugin version that requests write-only access cannot
-	         crash the app.
-	     The app never reads calendar contents on the device. -->
+	<!-- Calendar access, two uses:
+	       * Calendar sharing (device_calendar): with the person's say-so the
+	         app reads the calendars on this phone and shares only when they
+	         are busy or free — never a title, place or guest. iOS 17+ asks
+	         for FULL access (NSCalendarsFullAccessUsageDescription, REQUIRED
+	         or the request fails); iOS 15-16 use NSCalendarsUsageDescription.
+	       * "Add to calendar" (add_2_calendar) presents Apple's own new-event
+	         sheet; on iOS 17+ it runs out of process and needs nothing, the
+	         write-only string is declared defensively. -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>The Trellis reads the calendars on this phone to share only when you are busy or free, so your Witness or Runner can find a time you both have open. It never shares what is on your calendar.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>The Trellis adds the meetings you confirm with your Witness or Runner to your calendar.</string>
+	<string>The Trellis reads the calendars on this phone to share only when you are busy or free, so your Witness or Runner can find a time you both have open. It never shares what is on your calendar.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
 	<string>The Trellis adds the meetings you confirm with your Witness or Runner to your calendar.</string>
 	<!-- Apple's new-event sheet can look up Contacts for its location and
