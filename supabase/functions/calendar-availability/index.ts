@@ -80,8 +80,9 @@ const DAY_MS = 86_400_000;
 const MAX_WINDOW_DAYS = 21;
 /// How far ahead a search may start (Cronofy only answers ~200 days out).
 const MAX_START_AHEAD_DAYS = 180;
-/// One row per provider per user; this only bounds the work if that changes.
-const MAX_CONNECTIONS_PER_USER = 3;
+/// One row per provider per user (four providers since migration 022); this
+/// only bounds the work if that changes.
+const MAX_CONNECTIONS_PER_USER = 4;
 /// Everything we ask Cronofy in one call must be done within this.
 const CRONOFY_BUDGET_MS = 20_000;
 /// Each call reads two people's calendars from a third party, so it is budgeted
