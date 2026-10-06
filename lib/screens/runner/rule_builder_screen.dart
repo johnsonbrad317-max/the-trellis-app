@@ -74,10 +74,9 @@ class RuleBuilderScreen extends StatelessWidget {
   static String _committedNote(RunnerProfile profile) {
     final settlesAt = profile.ruleSettlesAt;
     if (settlesAt != null) {
-      return 'Your Rule of Life is committed. For its first week — until '
-          '${_formatDay(settlesAt)} — you can still change or remove any rhythm freely. '
-          'After that, changing or removing one needs your Witness\'s approval. '
-          'You can always add a rhythm.';
+      return 'Your Rule of Life is committed. Until ${_formatDay(settlesAt)}, you can still '
+          'change or remove any rhythm freely. After that, changing or removing one needs '
+          "your Witness's approval. You can always add a rhythm.";
     }
     if (profile.witnesses.isEmpty) {
       return 'Your Rule of Life is committed. You can always add a rhythm — and with no '
@@ -282,7 +281,11 @@ class RuleBuilderScreen extends StatelessWidget {
     await showBookplateForm<void>(
       context,
       title: 'Your Rule of Life is Set',
-      message: "You're starting a 14-day free trial of The Trellis (\$12/yr after). "
+      message: 'Your first week is a trial fit. Until '
+          "${_formatDay(DateTime.now().add(ruleSettlePeriod))}, you can change or remove any "
+          "rhythm as you learn what's realistic. After that, your Witness helps hold them in "
+          'place.\n\n'
+          "You're starting a 14-day free trial of The Trellis (\$12/yr after). "
           'Cancel anytime from Settings — you will not be charged until your trial ends.',
       bodyBuilder: (dialogContext, setDialogState) {
         final textTheme = Theme.of(dialogContext).textTheme;
@@ -441,6 +444,19 @@ class RuleBuilderScreen extends StatelessWidget {
             if (!profile.hasCommittedRule) ...[
               const SizedBox(height: 32),
               Center(child: _CommitButton(onCommit: () => _commitRule(context))),
+              const SizedBox(height: 12),
+              // Said before the button is pressed, so the first-week rule is
+              // never a surprise.
+              Text(
+                "After you commit, you'll have seven days to live with these rhythms and "
+                'adjust them freely. After that, changing or removing a rhythm requires '
+                "your Witness's approval first. Adding a rhythm is always open.",
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.forestGreen.withValues(alpha: 0.75),
+                  fontStyle: FontStyle.italic,
+                ),
+                textAlign: TextAlign.center,
+              ),
             ],
             const SizedBox(height: 24),
           ],
