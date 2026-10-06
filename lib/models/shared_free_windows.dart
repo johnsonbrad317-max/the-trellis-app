@@ -191,14 +191,16 @@ int _localDayKey(DateTime local) =>
 /// duration is treated as one minute, as the Edge Function does.
 ///
 /// The defaults match the calendar-availability Edge Function's request
-/// defaults (60 minutes, 08:00-20:00, 8 suggestions). Never mutates its input.
+/// defaults (60 minutes, 06:00-20:00, 8 suggestions). Never mutates its input.
 List<TimeSpan> sharedFreeWindows({
   required List<TimeSpan> busyA,
   required List<TimeSpan> busyB,
   required DateTime from,
   required DateTime to,
   int durationMinutes = 60,
-  int dayStartHour = 8,
+  // 6 a.m.: a morning coffee before work is a real meeting; the old 8 a.m.
+  // start hid it.
+  int dayStartHour = 6,
   int dayEndHour = 20,
   int maxSuggestions = 8,
   int maxPerDay = 3,

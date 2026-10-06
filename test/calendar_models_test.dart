@@ -59,6 +59,21 @@ void main() {
     });
   });
 
+  group('sharedFreeWindows defaults', () {
+    test('a day starts at 6 a.m. (room for a morning coffee) and ends at 8 p.m.', () {
+      final from = DateTime(2026, 10, 12);
+      final windows = sharedFreeWindows(
+        busyA: const [],
+        busyB: const [],
+        from: from,
+        to: from.add(const Duration(days: 1)),
+      );
+      expect(windows, isNotEmpty);
+      expect(windows.first.start, DateTime(2026, 10, 12, 6));
+      expect(windows.first.end, DateTime(2026, 10, 12, 20));
+    });
+  });
+
   group('CalendarService.parseBusyBlocks', () {
     test('reads the server shape and skips anything malformed', () {
       final blocks = CalendarService.parseBusyBlocks([

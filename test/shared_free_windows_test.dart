@@ -242,15 +242,16 @@ void main() {
         from: oct(6),
         to: oct(9),
       );
-      expect(out, [at(6, 8, 0, 20, 0), at(7, 8, 0, 20, 0), at(8, 8, 0, 20, 0)]);
+      // The library default is 6 a.m. (early coffees count).
+      expect(out, [at(6, 6, 0, 20, 0), at(7, 6, 0, 20, 0), at(8, 6, 0, 20, 0)]);
       for (final w in out) {
-        expect(w.start.hour, 8);
+        expect(w.start.hour, 6);
         expect(w.start.minute, 0);
       }
     });
 
     test('the default maxPerDay keeps the first three windows of a day', () {
-      // Four gaps on Oct 6: 8-9, 10-11, 12-13, 14-20. Default maxPerDay = 3
+      // Four gaps on Oct 6: 6-9, 10-11, 12-13, 14-20. Default maxPerDay = 3
       // keeps the first three; Oct 7 still gets its own.
       final out = sharedFreeWindows(
         busyA: [at(6, 9, 0, 10, 0), at(6, 11, 0, 12, 0), at(6, 13, 0, 14, 0)],
@@ -259,10 +260,10 @@ void main() {
         to: oct(8),
       );
       expect(out, [
-        at(6, 8, 0, 9, 0),
+        at(6, 6, 0, 9, 0),
         at(6, 10, 0, 11, 0),
         at(6, 12, 0, 13, 0),
-        at(7, 8, 0, 20, 0),
+        at(7, 6, 0, 20, 0),
       ]);
     });
 
@@ -413,7 +414,7 @@ void main() {
         to: oct(7).toUtc(),
         maxSuggestions: 20,
       );
-      expect(out, [at(6, 8, 0, 9, 0), at(6, 11, 0, 20, 0)]);
+      expect(out, [at(6, 6, 0, 9, 0), at(6, 11, 0, 20, 0)]);
       for (final w in out) {
         expect(w.start.isUtc, isFalse);
         expect(w.end.isUtc, isFalse);

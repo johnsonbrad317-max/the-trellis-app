@@ -602,7 +602,7 @@ Calendar
       allow it in Settings, nothing crashes.
 - [ ] Both halves of a paired couple sharing: open the meeting scheduler on
       either side — "Times you both have free" chips appear, none of them
-      overlapping a real event on either phone, none outside 8 a.m.–9 p.m.,
+      overlapping a real event on either phone, none outside 6 a.m.–8 p.m.,
       at most three per day. With one side not sharing the line reads
       "Your Witness/Runner isn't sharing a calendar yet…" and picking a time by
       hand still works.
