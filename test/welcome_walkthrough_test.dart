@@ -9,14 +9,14 @@ import 'package:trellis/theme/app_theme.dart';
 /// supply a [RunnerProfile] for.
 void main() {
   const headlines = [
-    'Run with endurance.',
+    'Let us throw off everything that hinders…',
     'Anchor Your Days.',
     'Walk Alongside.',
-    'Shepherd with Clarity.',
-    'Keep a garden.',
-    'Find the time.',
-    'The flock, not the diary.',
-    'Abide. Grow. Be Known.',
+    'Shepherd the Flock.',
+    'Cultivate a Garden of Intercession.',
+    'Find the Time.',
+    'The Flock, Not the Confessional.',
+    'Begin the Race.',
   ];
 
   void useScreen(WidgetTester tester, Size size) {
@@ -63,17 +63,18 @@ void main() {
         ],
       );
       for (final slide in welcomeSlides) {
-        expect(slide.body, isNotNull, reason: slide.headline);
+        expect(slide.body, isNotEmpty, reason: slide.headline);
       }
     });
 
-    test("the owner's words: website cards, sins to throw off, organization not church", () {
-      expect(welcomeSlides[1].body, contains('sins to throw off'));
-      expect(welcomeSlides[2].body, startsWith('Be present for the entire journey.'));
-      expect(welcomeSlides[3].body, contains('organization'));
+    test("the owner's words: scripture first, weights to throw off, no journal, no church", () {
+      expect(welcomeSlides[0].isScripture, isTrue);
+      expect(welcomeSlides[0].body, endsWith('— Hebrews 12:1–2'));
+      expect(welcomeSlides[1].body, contains('weights you must throw off'));
+      expect(welcomeSlides[6].body, contains('never the granular details'));
       for (final slide in welcomeSlides) {
-        expect(slide.body!.toLowerCase(), isNot(contains('journal')), reason: slide.headline);
-        expect(slide.body!.toLowerCase(), isNot(contains('church')), reason: slide.headline);
+        expect(slide.body.toLowerCase(), isNot(contains('journal')), reason: slide.headline);
+        expect(slide.body.toLowerCase(), isNot(contains('church')), reason: slide.headline);
       }
     });
 
@@ -157,14 +158,14 @@ void main() {
       expect(dotWidth(tester, 1), 20);
       expect(find.text('Anchor Your Days.'), findsOneWidget);
 
-      // Tapping a dot goes straight to that slide — here the leaders' sample
-      // roster, with its three status words.
+      // Tapping a dot goes straight to that slide — here the leaders' view,
+      // with its two labelled trellises.
       await tester.tap(find.byKey(const ValueKey('welcome-dot-6')));
       await tester.pumpAndSettle();
       expect(currentPage(tester), 6);
-      expect(find.text('The flock, not the diary.'), findsOneWidget);
-      expect(find.text('Full Bloom'), findsOneWidget);
-      expect(find.text('Drooping'), findsOneWidget);
+      expect(find.text('The Flock, Not the Confessional.'), findsOneWidget);
+      expect(find.text('FLOURISHING'), findsOneWidget);
+      expect(find.text('WEARY'), findsOneWidget);
     });
   });
 

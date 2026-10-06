@@ -7,47 +7,43 @@ import '../models/runner_profile.dart';
 import '../models/user_role.dart';
 import '../theme/app_colors.dart';
 import '../widgets/bookplate_app_bar.dart';
-import '../widgets/bookplate_chip.dart' show BookplateTag;
 import '../widgets/bookplate_dialog.dart' show BookplateButton, BookplateButtonVariant;
-import '../widgets/bookplate_plate.dart' show BookplateDivider, BookplatePlate;
 import '../widgets/brass_glyph.dart';
 import '../widgets/nav_icon.dart';
-import '../widgets/prayer_medallion.dart';
 import '../widgets/trellis_scaffold.dart';
 import '../widgets/trimmed_asset.dart';
 import '../widgets/vine_frame.dart';
 import '../widgets/vine_visualizer.dart';
 
-/// The picture at the top of a welcome slide.
+/// The picture at the top of a welcome slide. Each is one of the app's own
+/// woodcuts or a composition of its parts, so the deck looks like the role
+/// cards and the rest of the app.
 enum WelcomeArt {
-  /// The trellis in full leaf — the race, run well.
-  flourishingTrellis,
-  runner,
-  witness,
-  cloud,
+  /// A traveler on a rugged path, looking toward the cross (the Runner's
+  /// woodcut — it is exactly the race set before us).
+  raceTraveler,
 
-  /// A row of prayer medallions — faces and marks from a prayer garden.
-  prayerGarden,
+  /// A vellum card bearing the Rule of Life illustration.
+  ruleCard,
 
-  /// A shared-free-time suggestion, as the Connect tab shows one.
+  /// Two companions on the path, one arm around the other (the Witness's
+  /// woodcut).
+  companions,
+
+  /// A shepherd with a staff over the valley (the Cloud's woodcut).
+  shepherd,
+
+  /// The trellis in full leaf — a flourishing botanical vine.
+  flourishingVine,
+
+  /// A shared-free-time card on dark stone.
   connect,
 
-  /// A sample of what leaders see: a roster of vines, in summary only.
-  leaderRoster,
+  /// Two trellises side by side: one flourishing, one weary.
+  communityHealth,
 
-  /// No picture: the slide's glyph rows ([WelcomeSlide.lines]) are the art.
-  glyphRows,
-
-  /// A vine partway up the trellis — a season just beginning.
-  growingTrellis,
-}
-
-/// One line of the "How it works" slide: a tab's illustration beside its text.
-class WelcomeLine {
-  const WelcomeLine(this.glyph, this.text);
-
-  final NavGlyph glyph;
-  final String text;
+  /// The Trellis seal on parchment.
+  seal,
 }
 
 /// One slide of the welcome walkthrough. The copy is the owner's; change it
@@ -57,86 +53,87 @@ class WelcomeSlide {
     required this.kicker,
     required this.headline,
     required this.art,
-    this.body,
-    this.lines = const [],
+    required this.body,
+    this.isScripture = false,
   });
 
   /// The brass small-caps line above the headline, e.g. "THE RUNNER".
   final String kicker;
   final String headline;
   final WelcomeArt art;
+  final String body;
 
-  /// Prose beneath the headline — or null when [lines] carry the body.
-  final String? body;
-  final List<WelcomeLine> lines;
+  /// Set in italics, as a quotation.
+  final bool isScripture;
 }
 
-/// The deck, in order: the race, the three roles (the Runner and Witness
-/// cards in the words of the website), the Prayer and Connect tabs, what
+/// The deck, in order: the race, the three roles, prayer, connect, what
 /// leaders see, begin.
 const List<WelcomeSlide> welcomeSlides = [
   WelcomeSlide(
     kicker: 'THE RACE',
-    headline: 'Run with endurance.',
-    art: WelcomeArt.flourishingTrellis,
-    body: '“Therefore, since we are surrounded by so great a cloud of witnesses… let us '
-        'run with endurance the race that is set before us, looking to Jesus.” '
+    headline: 'Let us throw off everything that hinders…',
+    art: WelcomeArt.raceTraveler,
+    isScripture: true,
+    body: '…and the sin that so easily entangles. And let us run with perseverance the race '
+        'marked out for us, fixing our eyes on Jesus, the pioneer and perfecter of faith. '
         '— Hebrews 12:1–2',
   ),
   WelcomeSlide(
     kicker: 'THE RUNNER',
     headline: 'Anchor Your Days.',
-    art: WelcomeArt.runner,
-    body: 'Build your baseline spiritual practices — and name the sins to throw off — and '
-        'track your growth over seasons. Rather than striving in isolation, define your '
-        'Rule of Life and invite others to walk alongside you.',
+    art: WelcomeArt.ruleCard,
+    body: 'Shed the friction of merely managing life to pursue the life you were made for. '
+        'Define your Rule of Life—building daily rhythms of abiding, family, and purity—and '
+        'explicitly name the weights you must throw off. Do not strive in isolation; build '
+        'your rhythms and run your race with trusted companions.',
   ),
   WelcomeSlide(
     kicker: 'THE WITNESS',
     headline: 'Walk Alongside.',
-    art: WelcomeArt.witness,
-    body: 'Be present for the entire journey. By quietly handling the logistics of checking '
-        'in, the framework frees you to offer meaningful support — extending grace when '
-        'they stumble, and true encouragement in seasons of growth.',
+    art: WelcomeArt.companions,
+    body: 'We were never meant to run alone. Stand as a trusted witness for those who invite '
+        'you into their race. Carry one another’s burdens, offer truth in the quiet '
+        'struggles, and hold the light for your friends when the path grows dark.',
   ),
   WelcomeSlide(
     kicker: 'THE CLOUD',
-    headline: 'Shepherd with Clarity.',
-    art: WelcomeArt.cloud,
-    body: 'An organization can gather its Runners under one canopy: shared DNA Rhythms for '
-        'the whole flock, a roster of who is growing and who needs a hand — only in '
-        "summary, never anyone's daily answers.",
+    headline: 'Shepherd the Flock.',
+    art: WelcomeArt.shepherd,
+    body: 'Gather your people to oversee their spiritual health, foster deep one-on-one '
+        'connections, and cultivate a community of care without the exhausting '
+        'administrative friction.',
   ),
   WelcomeSlide(
     kicker: 'PRAYER',
-    headline: 'Keep a garden.',
-    art: WelcomeArt.prayerGarden,
-    body: 'The Prayer tab holds the people and burdens you carry — each a card with a face '
-        'or a mark, a line of Scripture, and the day you last prayed. At the time you '
-        'choose, a reminder walks you through them, one at a time.',
+    headline: 'Cultivate a Garden of Intercession.',
+    art: WelcomeArt.flourishingVine,
+    body: 'Keep a living record of the people and burdens you are carrying. Anchor your mind '
+        'on what matters most, moving beyond passing thoughts to build a sustained, '
+        'intentional rhythm of prayer for your family, your witnesses, and your community.',
   ),
   WelcomeSlide(
     kicker: 'CONNECT',
-    headline: 'Find the time.',
+    headline: 'Find the Time.',
     art: WelcomeArt.connect,
-    body: 'The Connect tab finds a time you and your Witness are both free — connect a '
-        "calendar and it reads only busy or free, never what you're doing — and suggests "
-        'a place between you. A text to your Witness is one tap away.',
+    body: 'Strip away the logistical friction of finding time to meet. Whether gathering for '
+        'a shared meal, a one-on-one walk, or a spontaneous moment of outreach, simply see '
+        'where your rhythms align so you can focus entirely on showing up for one another.',
   ),
   WelcomeSlide(
     kicker: 'WHAT LEADERS SEE',
-    headline: 'The flock, not the diary.',
-    art: WelcomeArt.leaderRoster,
-    body: 'Your leaders see a roster of vines — flourishing, budding, drooping — how the '
-        'shared DNA Rhythms are kept across the organization, and who has gone quiet. '
-        "Never a single day's answers, and never your prayers.",
+    headline: 'The Flock, Not the Confessional.',
+    art: WelcomeArt.communityHealth,
+    body: 'The Cloud provides leaders with clear visibility into the overarching spiritual '
+        'health of the community—revealing who is flourishing and who is quietly drooping. '
+        'But the sacred privacy of the Runner remains secure: leadership sees the season you '
+        'are in, never the granular details of your daily struggles or private prayers.',
   ),
   WelcomeSlide(
     kicker: 'BEGIN',
-    headline: 'Abide. Grow. Be Known.',
-    art: WelcomeArt.growingTrellis,
-    body: 'Set up your Rule of Life, invite a Witness, and let the season begin. You can read '
-        'this again any time under How The Trellis Works in the menu.',
+    headline: 'Begin the Race.',
+    art: WelcomeArt.seal,
+    body: 'Step onto the path. Build your rhythms. Invite your witnesses.',
   ),
 ];
 
@@ -330,39 +327,41 @@ class _WelcomeWalkthroughViewState extends State<WelcomeWalkthroughView> {
 }
 
 /// One slide on a double-ruled bookplate (the same nested-Container edging as
-/// OrnateRoleCard): the picture on top, a brass small-caps kicker, the
-/// headline, and the body — which scrolls inside the plate if the screen or
-/// text size leaves it no other room, so nothing ever overflows.
+/// OrnateRoleCard): the picture on top, a brass small-caps kicker, then the
+/// headline and body — which scroll inside the plate if the screen or text
+/// size leaves them no other room, so nothing ever overflows.
 class WelcomeSlideView extends StatelessWidget {
   const WelcomeSlideView(this.slide, {super.key});
 
   final WelcomeSlide slide;
 
   Widget _art(double height) => switch (slide.art) {
-        WelcomeArt.flourishingTrellis =>
+        WelcomeArt.raceTraveler => _roleArt(UserRole.runner, height),
+        WelcomeArt.companions => _roleArt(UserRole.witness, height),
+        WelcomeArt.shepherd => _roleArt(UserRole.cloud, height),
+        WelcomeArt.flourishingVine =>
           TrellisVisual(state: TrellisState.flourishing, reveal: 1, height: height),
-        WelcomeArt.growingTrellis =>
-          TrellisVisual(state: TrellisState.growing, reveal: 0.4, height: height),
-        WelcomeArt.runner => _roleArt(UserRole.runner, height),
-        WelcomeArt.witness => _roleArt(UserRole.witness, height),
-        WelcomeArt.cloud => _roleArt(UserRole.cloud, height),
-        // The composed pictures are laid out at a comfortable size and then
-        // scaled down to the room the plate gives them, so a small phone or a
-        // large text size can never make them overflow.
-        WelcomeArt.prayerGarden => _fitted(const _PrayerGardenArt()),
+        WelcomeArt.ruleCard => _VellumCard(
+            child: TrimmedAsset(
+              asset: NavGlyph.rule.asset,
+              imageSize: NavGlyph.rule.imageSize,
+              content: NavGlyph.rule.content,
+              height: height * 0.7,
+              cacheWidth: 900,
+            ),
+          ),
+        // Compositions are laid out at a comfortable size and scaled down to
+        // the room the plate gives them, so a small phone or a large text
+        // size can never make them overflow.
         WelcomeArt.connect => _fitted(const _ConnectArt()),
-        WelcomeArt.leaderRoster => _fitted(const _LeaderRosterArt()),
-        WelcomeArt.glyphRows => const SizedBox.shrink(),
+        WelcomeArt.communityHealth => _fitted(const _CommunityHealthArt()),
+        WelcomeArt.seal => Image.asset(
+            'assets/images/the_trellis_icon_transparent.png',
+            height: height,
+            fit: BoxFit.contain,
+            cacheWidth: 600,
+          ),
       };
-
-  // A picture, not prose: it follows the slide's scale, not the text size (a
-  // medallion's initials at a large text size would otherwise burst it).
-  static Widget _fitted(Widget child) => MediaQuery.withNoTextScaling(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: SizedBox(width: 300, child: child),
-        ),
-      );
 
   /// The role card's illustration, cropped to its opaque region as the cards
   /// do, at a fixed height instead of filling the card.
@@ -372,6 +371,14 @@ class WelcomeSlideView extends StatelessWidget {
         content: role.cardArtContent,
         height: height,
         cacheWidth: 1400,
+      );
+
+  // A picture, not prose: it follows the slide's scale, not the text size.
+  static Widget _fitted(Widget child) => MediaQuery.withNoTextScaling(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SizedBox(width: 300, child: child),
+        ),
       );
 
   /// The body scrolls inside the plate if it must, so this never clips; it
@@ -417,16 +424,12 @@ class WelcomeSlideView extends StatelessWidget {
             final plateHeight = constraints.maxHeight;
             final artHeight =
                 (plateHeight * (plateHeight < 340 ? 0.30 : 0.38)).clamp(80.0, 240.0);
-            final hasArt = slide.art != WelcomeArt.glyphRows;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (hasArt) ...[
-                  SizedBox(height: artHeight, child: Center(child: _art(artHeight))),
-                  const SizedBox(height: 14),
-                ] else
-                  const SizedBox(height: 8),
+                SizedBox(height: artHeight, child: Center(child: _art(artHeight))),
+                const SizedBox(height: 14),
                 Text(
                   slide.kicker,
                   style: textTheme.labelMedium?.copyWith(
@@ -451,26 +454,14 @@ class WelcomeSlideView extends StatelessWidget {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 10),
-                        if (slide.body != null)
-                          Text(
-                            slide.body!,
-                            style: slide.art == WelcomeArt.flourishingTrellis
-                                ? bodyStyle?.copyWith(fontStyle: FontStyle.italic)
-                                : bodyStyle,
-                            textAlign: TextAlign.center,
-                            textScaler: _bodyScaler(context, slide.body!),
-                          )
-                        else
-                          for (var i = 0; i < slide.lines.length; i++) ...[
-                            if (i > 0) const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                NavIcon(slide.lines[i].glyph),
-                                const SizedBox(width: 14),
-                                Expanded(child: Text(slide.lines[i].text, style: bodyStyle)),
-                              ],
-                            ),
-                          ],
+                        Text(
+                          slide.body,
+                          style: slide.isScripture
+                              ? bodyStyle?.copyWith(fontStyle: FontStyle.italic)
+                              : bodyStyle,
+                          textAlign: TextAlign.center,
+                          textScaler: _bodyScaler(context, slide.body),
+                        ),
                       ],
                     ),
                   ),
@@ -484,41 +475,52 @@ class WelcomeSlideView extends StatelessWidget {
   }
 }
 
-/// Three prayer medallions — a face (initials), a mark for a situation, another
-/// face — the way the Prayer tab's photo row reads. Sample names only.
-class _PrayerGardenArt extends StatelessWidget {
-  const _PrayerGardenArt();
+/// A small vellum card with a brass hairline, for an illustration that is
+/// itself a picture of a card.
+class _VellumCard extends StatelessWidget {
+  const _VellumCard({required this.child});
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    // Drawn at the prayer card's own medallion size (where the initials are
-    // known to fit at every text size) and scaled down by the slide.
-    return const Row(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        PrayerMedallion(name: 'Maria Lopez', size: 76),
-        SizedBox(width: 18),
-        PrayerMedallion(name: 'Healing', glyph: BrassGlyphKind.cross, size: 96),
-        SizedBox(width: 18),
-        PrayerMedallion(name: 'Sam Okafor', size: 76),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.parchmentLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.antiqueBrass.withValues(alpha: 0.7)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.forestGreen.withValues(alpha: 0.10),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 }
 
-/// A shared-free-time suggestion on a small plate: calendar mark, "Both free",
-/// a day and time, a place — the shape the Connect tab's suggestions take.
-/// Laid out at its natural size; the slide scales it to fit.
+/// A shared-free-time card on dark stone: calendar mark, "Both free", a day
+/// and time, a place — the shape the Connect tab's suggestions take, set on
+/// forest green with parchment lettering. Laid out at its natural size; the
+/// slide scales it to fit.
 class _ConnectArt extends StatelessWidget {
   const _ConnectArt();
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return BookplatePlate(
+    final light = AppColors.parchmentLight;
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.forestGreen,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.antiqueBrass, width: 1.2),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -527,11 +529,21 @@ class _ConnectArt extends StatelessWidget {
             children: [
               const BrassGlyph(BrassGlyphKind.calendar, color: AppColors.antiqueBrass),
               const SizedBox(width: 10),
-              Expanded(child: Text('Both free', style: textTheme.titleMedium, maxLines: 1)),
+              Expanded(
+                child: Text(
+                  'Both free',
+                  style: textTheme.titleMedium?.copyWith(color: light),
+                  maxLines: 1,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
-          Text('Thursday at 12:00 PM', style: textTheme.bodyMedium, maxLines: 1),
+          Text(
+            'Thursday at 12:00 PM',
+            style: textTheme.bodyMedium?.copyWith(color: light),
+            maxLines: 1,
+          ),
           const SizedBox(height: 4),
           Row(
             children: [
@@ -540,7 +552,7 @@ class _ConnectArt extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Halfway between you',
-                  style: textTheme.bodySmall,
+                  style: textTheme.bodySmall?.copyWith(color: light.withValues(alpha: 0.85)),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -553,53 +565,38 @@ class _ConnectArt extends StatelessWidget {
   }
 }
 
-/// Three roster rows, as a leader sees them: a small vine, a name, a status
-/// word — and nothing else. Sample names only. Laid out at its natural size;
-/// the slide scales it to fit.
-class _LeaderRosterArt extends StatelessWidget {
-  const _LeaderRosterArt();
-
-  static const _rows = [
-    ('Maria L.', 0.86, 'Full Bloom', AppColors.forestGreen),
-    ('Sam O.', 0.55, 'Budding', AppColors.antiqueBrass),
-    ('Jon P.', 0.30, 'Drooping', AppColors.terracotta),
-  ];
+/// Two trellises side by side — one flourishing, one weary — the community's
+/// health as a leader sees it: a season, never a day. Laid out at its natural
+/// size; the slide scales it to fit.
+class _CommunityHealthArt extends StatelessWidget {
+  const _CommunityHealthArt();
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return BookplatePlate(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < _rows.length; i++) ...[
-            if (i > 0) const BookplateDivider(),
-            SizedBox(
-              height: 40,
-              child: Row(
-                children: [
-                  VineGlyph(
-                    vitalityScore: _rows[i].$2,
-                    isDrooping: _rows[i].$2 < 0.45,
-                    height: 34,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _rows[i].$1,
-                      style: textTheme.bodyMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  BookplateTag(label: _rows[i].$3, color: _rows[i].$4),
-                ],
+    Widget vine(TrellisState state, double reveal, String label) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TrellisVisual(state: state, reveal: reveal, height: 118),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: textTheme.labelMedium?.copyWith(
+                color: AppColors.antiqueBrass,
+                letterSpacing: 1.6,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
-        ],
-      ),
+        );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        vine(TrellisState.flourishing, 1, 'FLOURISHING'),
+        const SizedBox(width: 36),
+        vine(TrellisState.struggling, 0.45, 'WEARY'),
+      ],
     );
   }
 }
