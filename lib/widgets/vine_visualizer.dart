@@ -3,17 +3,24 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'trimmed_asset.dart';
 
-/// Which of the five trellis illustrations a Runner's season calls for.
+/// Which of the five illustrations a Runner's season calls for: the bare
+/// wooden trellis, or one of four vines drawn ALONE on a transparent canvas
+/// (no trellis of their own), to be laid over it.
 enum TrellisState {
   empty('assets/images/trellis_empty.png'),
   growing('assets/images/trellis_growing.png'),
   flourishing('assets/images/trellis_flourishing.png'),
-  struggling('assets/images/trellis_struggling.png'),
+  // Exported at a lower resolution than the others (same proportions).
+  struggling('assets/images/trellis_struggling.png', imageSize: Size(687, 1024)),
   dead('assets/images/trellis_dead.png');
 
-  const TrellisState(this.asset);
+  const TrellisState(this.asset, {this.imageSize = const Size(1696, 2528)});
 
   final String asset;
+
+  /// The PNG's pixel size. All five share one canvas shape (2:3, the trellis
+  /// frame region below); this only differs where an export was smaller.
+  final Size imageSize;
 
   /// The state for a season. [hasData] is false until the Runner has real
   /// check-ins — a brand-new Runner always sees the empty trellis, never a
@@ -33,13 +40,13 @@ enum TrellisState {
   }
 }
 
-/// The Trellis visual, built as a two-layer Stack so the wooden frame is never
-/// cut: the bottom layer is always the full, bare `trellis_empty.png`, and
-/// over it sits the current [TrellisState]'s illustration inside a ClipRect
-/// anchored at the bottom. [reveal] (0.0-1.0) is the share of that top
-/// layer's height that shows, so consistency grows the vine up a permanent
-/// trellis — the wood lines up pixel-for-pixel across the assets. The empty
-/// state is just the bare base.
+/// The Trellis visual, built as a two-layer Stack: the bottom layer is always
+/// the bare wooden `trellis_empty.png`, and over it sits the current
+/// [TrellisState]'s vine — drawn alone on a transparent canvas of the same
+/// shape, so there is one trellis, never two — inside a ClipRect anchored at
+/// the bottom. [reveal] (0.0-1.0) is the share of the vine's height that
+/// shows, so consistency grows it up the trellis. The empty state is just the
+/// bare base.
 class TrellisVisual extends StatelessWidget {
   const TrellisVisual({
     super.key,
@@ -52,10 +59,20 @@ class TrellisVisual extends StatelessWidget {
   final double reveal;
   final double height;
 
-  // The five PNGs share one 1696x2528 canvas; this is the region that holds
-  // the frame in all of them, so the layers line up exactly.
-  static const _imageSize = Size(1696, 2528);
-  static const _content = Rect.fromLTRB(120, 36, 1578, 2442);
+  // The region of the shared canvas that holds the trellis frame, as a
+  // fraction of the canvas, so a vine exported at another resolution still
+  // lands in the same place over the wood.
+  static const _frame = Rect.fromLTRB(120 / 1696, 36 / 2528, 1578 / 1696, 2442 / 2528);
+
+  static Rect _contentFor(TrellisState layerState) {
+    final size = layerState.imageSize;
+    return Rect.fromLTRB(
+      _frame.left * size.width,
+      _frame.top * size.height,
+      _frame.right * size.width,
+      _frame.bottom * size.height,
+    );
+  }
 
   /// Even a near-zero season shows a sliver of growth, rather than reading as
   /// if the state image failed to load.
@@ -63,8 +80,8 @@ class TrellisVisual extends StatelessWidget {
 
   Widget _layer(TrellisState layerState) => TrimmedAsset(
         asset: layerState.asset,
-        imageSize: _imageSize,
-        content: _content,
+        imageSize: layerState.imageSize,
+        content: _contentFor(layerState),
         height: height,
         cacheWidth: 700,
       );
@@ -95,7 +112,19 @@ class TrellisVisual extends StatelessWidget {
                     child: Align(
                       alignment: Alignment.bottomCenter,
                       heightFactor: factor,
-                      child: child,
+                      // The vine's upper edge dissolves over its top tenth
+                      // rather than ending in a straight cut through the
+                      // leaves — growth tapering off, not a hedge trimmer.
+                      child: ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (bounds) => const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x00000000), Color(0xFF000000)],
+                          stops: [0.0, 0.12],
+                        ).createShader(bounds),
+                        child: child,
+                      ),
                     ),
                   ),
                   child: _layer(state),

@@ -225,6 +225,10 @@ class _ProviderPlate extends StatelessWidget {
               ),
             ],
           ),
+          if (provider.hint != null && !connected) ...[
+            const SizedBox(height: 8),
+            Text(provider.hint!, style: textTheme.bodySmall),
+          ],
           if (provider == CalendarProvider.apple && !connected) ...[
             const SizedBox(height: 8),
             Text(

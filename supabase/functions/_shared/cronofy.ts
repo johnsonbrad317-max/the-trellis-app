@@ -20,19 +20,22 @@
 
 import { fetchWithTimeout, FetchTimeoutError, isTimeoutError } from './http.ts';
 
-export type CalendarProvider = 'google' | 'outlook' | 'apple';
+/// 'outlook' is a Microsoft 365 work-or-school account; 'outlook_personal' is
+/// an outlook.com / hotmail.com / live.com account. Microsoft signs the two in
+/// through different doors, so they are two choices in the app and two
+/// providers here (migration 022 admits the second).
+export type CalendarProvider = 'google' | 'outlook' | 'outlook_personal' | 'apple';
 
 export function isCalendarProvider(value: unknown): value is CalendarProvider {
-  return value === 'google' || value === 'outlook' || value === 'apple';
+  return value === 'google' || value === 'outlook' || value === 'outlook_personal' || value === 'apple';
 }
 
-/// Our provider -> Cronofy `provider_name`. (ASSUMPTION: for 'outlook'
-/// 'office365' sends the user straight to Microsoft sign-in. Personal
-/// outlook.com/hotmail accounts may need 'live_connect' instead — change it
-/// here. Omit the entry to let Cronofy show its own provider chooser.)
+/// Our provider -> Cronofy `provider_name` (the values Cronofy documents for
+/// its authorization request: google, office365, live_connect, apple, exchange).
 const PROVIDER_NAME: Record<CalendarProvider, string> = {
   google: 'google',
   outlook: 'office365',
+  outlook_personal: 'live_connect',
   apple: 'apple',
 };
 

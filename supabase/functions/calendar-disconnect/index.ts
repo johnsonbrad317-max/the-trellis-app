@@ -52,7 +52,11 @@ async function handle(req: Request): Promise<Response> {
   if (!read.ok) return read.response;
   const provider = read.body.provider;
   if (!isCalendarProvider(provider)) {
-    return errorResponse(400, 'invalid_request', 'provider must be google, outlook or apple.');
+    return errorResponse(
+      400,
+      'invalid_request',
+      'provider must be google, outlook, outlook_personal or apple.',
+    );
   }
 
   // Revoke first (best effort), while we still hold the token. Nothing in this

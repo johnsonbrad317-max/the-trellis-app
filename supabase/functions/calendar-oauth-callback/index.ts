@@ -51,6 +51,7 @@ import { StateSecretMissingError, verifyState } from '../_shared/state.ts';
 const PROVIDER_LABEL: Record<CalendarProvider, string> = {
   google: 'Google Calendar',
   outlook: 'Outlook Calendar',
+  outlook_personal: 'Outlook.com Calendar',
   apple: 'Apple Calendar',
 };
 

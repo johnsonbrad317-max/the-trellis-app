@@ -2,7 +2,14 @@
 /// backend — see supabase/CALENDAR_SETUP.md).
 enum CalendarProvider {
   google,
+
+  /// A Microsoft 365 work-or-school account.
   outlook,
+
+  /// A personal outlook.com / hotmail.com / live.com account. Microsoft signs
+  /// these in through a different door from work accounts, so it is a
+  /// separate choice (and a separate connection) rather than one "Outlook".
+  outlookPersonal,
   apple;
 
   /// The value stored in `calendar_connections.provider` and sent to the
@@ -10,13 +17,25 @@ enum CalendarProvider {
   String get dbValue => switch (this) {
         CalendarProvider.google => 'google',
         CalendarProvider.outlook => 'outlook',
+        CalendarProvider.outlookPersonal => 'outlook_personal',
         CalendarProvider.apple => 'apple',
       };
 
   String get label => switch (this) {
         CalendarProvider.google => 'Google Calendar',
-        CalendarProvider.outlook => 'Outlook Calendar',
+        CalendarProvider.outlook => 'Outlook Calendar (work or school)',
+        CalendarProvider.outlookPersonal => 'Outlook.com or Hotmail',
         CalendarProvider.apple => 'Apple Calendar',
+      };
+
+  /// A line under the name saying which accounts this choice is for, where
+  /// the name alone could leave someone guessing.
+  String? get hint => switch (this) {
+        CalendarProvider.outlook =>
+          'For a Microsoft 365 account from your church or workplace.',
+        CalendarProvider.outlookPersonal =>
+          'For a personal Microsoft account — an outlook.com, hotmail.com or live.com address.',
+        CalendarProvider.google || CalendarProvider.apple => null,
       };
 
   /// The provider for a database value, or null if it isn't one we know.

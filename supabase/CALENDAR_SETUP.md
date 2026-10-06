@@ -1,7 +1,9 @@
 # Calendar availability — owner setup
 
-Runners and Witnesses can connect Google Calendar, Outlook or Apple (iCloud)
-Calendar. When one of them proposes a meeting, The Trellis suggests times when
+Runners and Witnesses can connect Google Calendar, Outlook (a Microsoft 365
+work-or-school account), Outlook.com / Hotmail (a personal Microsoft account —
+a separate choice, because Microsoft signs the two in differently; migration
+022) or Apple (iCloud) Calendar. When one of them proposes a meeting, The Trellis suggests times when
 **both** people are free — and neither person ever sees the other's busy blocks
 or event details.
 

@@ -5,7 +5,7 @@
   Host this file anywhere static and https (Firebase Hosting, your marketing
   site, ...) and set the Edge Function secret CALENDAR_RESULT_REDIRECT_URL to
   its URL. calendar-oauth-callback redirects here with
-  ?status=connected|cancelled|error&provider=google|outlook|apple.
+  ?status=connected|cancelled|error&provider=google|outlook|outlook_personal|apple.
 
   Why it exists: Supabase serves text/html from the default *.supabase.co
   domain as plain text, so the callback can't render this page itself there.
@@ -48,7 +48,12 @@
   <script>
     (function () {
       var params = new URLSearchParams(window.location.search);
-      var labels = { google: 'Google Calendar', outlook: 'Outlook Calendar', apple: 'Apple Calendar' };
+      var labels = {
+        google: 'Google Calendar',
+        outlook: 'Outlook Calendar',
+        outlook_personal: 'Outlook.com Calendar',
+        apple: 'Apple Calendar'
+      };
       var provider = params.get('provider');
       // Own keys only: "constructor" or "__proto__" is not a provider.
       var label = Object.prototype.hasOwnProperty.call(labels, provider) ? labels[provider] : 'Your calendar';

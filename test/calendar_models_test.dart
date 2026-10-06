@@ -10,6 +10,7 @@ void main() {
     test('maps to and from its database value', () {
       expect(CalendarProvider.google.dbValue, 'google');
       expect(CalendarProvider.outlook.dbValue, 'outlook');
+      expect(CalendarProvider.outlookPersonal.dbValue, 'outlook_personal');
       expect(CalendarProvider.apple.dbValue, 'apple');
       for (final provider in CalendarProvider.values) {
         expect(CalendarProvider.fromDb(provider.dbValue), provider);
@@ -20,7 +21,12 @@ void main() {
 
     test('has the display labels', () {
       expect(CalendarProvider.google.label, 'Google Calendar');
-      expect(CalendarProvider.outlook.label, 'Outlook Calendar');
+      expect(CalendarProvider.outlook.label, 'Outlook Calendar (work or school)');
+      expect(CalendarProvider.outlookPersonal.label, 'Outlook.com or Hotmail');
+      // Both Outlook choices say who they are for; the other two need no note.
+      expect(CalendarProvider.outlook.hint, isNotNull);
+      expect(CalendarProvider.outlookPersonal.hint, contains('hotmail.com'));
+      expect(CalendarProvider.google.hint, isNull);
       expect(CalendarProvider.apple.label, 'Apple Calendar');
     });
   });
