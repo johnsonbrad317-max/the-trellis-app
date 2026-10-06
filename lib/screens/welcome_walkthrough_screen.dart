@@ -20,10 +20,11 @@ import '../widgets/vine_visualizer.dart';
 /// cards and the rest of the app.
 enum WelcomeArt {
   /// A traveler on a rugged path, looking toward the cross (the Runner's
-  /// woodcut — it is exactly the race set before us).
+  /// woodcut) — on THE RUNNER card, as on the role card.
   raceTraveler,
 
-  /// A vellum card bearing the Rule of Life illustration.
+  /// A vellum card bearing the Rule of Life book — the Word that opens THE
+  /// RACE.
   ruleCard,
 
   /// Two companions on the path, one arm around the other (the Witness's
@@ -73,7 +74,7 @@ const List<WelcomeSlide> welcomeSlides = [
   WelcomeSlide(
     kicker: 'THE RACE',
     headline: 'Let us throw off everything that hinders…',
-    art: WelcomeArt.raceTraveler,
+    art: WelcomeArt.ruleCard,
     isScripture: true,
     body: '…and the sin that so easily entangles. And let us run with perseverance the race '
         'marked out for us, fixing our eyes on Jesus, the pioneer and perfecter of faith. '
@@ -82,7 +83,7 @@ const List<WelcomeSlide> welcomeSlides = [
   WelcomeSlide(
     kicker: 'THE RUNNER',
     headline: 'Anchor Your Days.',
-    art: WelcomeArt.ruleCard,
+    art: WelcomeArt.raceTraveler,
     body: 'Shed the friction of merely managing life to pursue the life you were made for. '
         'Define your Rule of Life—building daily rhythms of abiding, family, and purity—and '
         'explicitly name the weights you must throw off. Do not strive in isolation; build '
