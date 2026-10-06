@@ -713,7 +713,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.byType(PrayerMedallion), findsOneWidget);
       expect(find.text('ML'), findsOneWidget);
-      expect(find.text('PERSON'), findsOneWidget);
+      expect(find.text('PERSON'), findsNothing);
       expect(find.text('Maria Lopez'), findsOneWidget);
       expect(find.text('Knee surgery.'), findsOneWidget);
       expect(find.text('Philippians 4:6-7'), findsOneWidget);
@@ -767,7 +767,8 @@ void main() {
         ));
         expect(tester.takeException(), isNull);
       }
-      expect(find.text('SITUATION'), findsOneWidget);
+      // No "SITUATION" / "PERSON" kicker over the name any more.
+      expect(find.text('SITUATION'), findsNothing);
       // A situation has the category's mark in the medallion, not initials.
       expect(
         find.descendant(of: find.byType(PrayerMedallion), matching: find.byType(BrassGlyph)),

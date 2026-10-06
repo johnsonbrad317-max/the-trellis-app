@@ -10,6 +10,7 @@ import '../../widgets/brass_glyph.dart';
 import '../../widgets/brass_lock.dart';
 import '../../widgets/cloud_empty_state.dart';
 import '../../widgets/dna_rhythm_dialog.dart';
+import '../../widgets/email_chooser_sheet.dart';
 import '../../widgets/launch_link.dart';
 
 /// Below this many actively-tracked Runners, per-rhythm aggregates could be
@@ -554,14 +555,11 @@ class _TriageCardState extends State<_TriageCard> {
                                   label: 'Email',
                                   compact: true,
                                   variant: BookplateButtonVariant.secondary,
-                                  onPressed: () => _contact(
-                                    mailtoUri(
-                                      row.email!,
-                                      subject: 'Thinking of you',
-                                      body: row.message,
-                                    ),
-                                    'No email app is set up on this device. Their address is '
-                                        '${row.email}.',
+                                  onPressed: () => showEmailChooser(
+                                    context,
+                                    email: row.email!,
+                                    subject: 'Thinking of you',
+                                    body: row.message,
                                   ),
                                 ),
                               ],

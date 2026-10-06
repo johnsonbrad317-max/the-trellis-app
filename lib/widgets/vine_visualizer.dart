@@ -155,11 +155,17 @@ class VineVisualizerCard extends StatelessWidget {
     required this.isDrooping,
     this.hasData = true,
     this.showTitle = true,
+    this.emptyCaption = 'Stick to Your Rule and Watch Yourself Grow',
   });
 
   final double vitalityScore;
   final bool isDrooping;
   final bool hasData;
+
+  /// The single line under an empty trellis ([hasData] false). The default
+  /// speaks to the Runner; a Witness looking at someone else's bare trellis
+  /// gets their own line.
+  final String emptyCaption;
 
   /// False hides the "This Season" heading — for contexts (like
   /// the Witness dashboard) that already show their own contextual title
@@ -203,7 +209,7 @@ class VineVisualizerCard extends StatelessWidget {
           const SizedBox(height: 12),
           if (!hasData)
             Text(
-              'Stick to Your Rule and Watch Yourself Grow',
+              emptyCaption,
               style: textTheme.titleMedium?.copyWith(fontStyle: FontStyle.italic),
               textAlign: TextAlign.center,
             )

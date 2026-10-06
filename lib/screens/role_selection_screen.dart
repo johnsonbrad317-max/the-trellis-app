@@ -15,6 +15,7 @@ import 'church_data_sharing_consent_screen.dart';
 import 'cloud_access_code_screen.dart';
 import 'cloud_shell.dart';
 import 'runner_shell.dart';
+import 'welcome_walkthrough_screen.dart';
 import 'witness_shell.dart';
 
 /// Asks a newly-signing-up user which role they're starting as, then
@@ -172,13 +173,15 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       // Rule of Life tab; nothing counts until they commit to it.
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
+      final navigator = Navigator.of(context);
+      navigator.pushReplacement(
         MaterialPageRoute(
           builder: (context) => role == UserRole.witness
               ? WitnessShell(profile: profile)
               : RunnerShell(profile: profile),
         ),
       );
+      _showWelcomeDeck(navigator, profile);
     } on AuthException catch (error) {
       if (mounted) setState(() => _errorMessage = error.message);
     } catch (_) {
@@ -188,6 +191,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  /// A brand-new account's first sight of the app: the "how The Trellis
+  /// works" deck over the shell it has just been handed (the shell loads
+  /// underneath; Begin or Skip pops back to it). Never shown twice — the
+  /// deck records itself as seen.
+  void _showWelcomeDeck(NavigatorState navigator, RunnerProfile profile) {
+    if (profile.hasSeenWelcome) return;
+    navigator.push(
+      MaterialPageRoute(builder: (context) => WelcomeWalkthroughScreen(profile: profile)),
+    );
   }
 
   /// Cloud never saves to the database on tap alone: the Church Access Code
@@ -217,9 +231,11 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       if (!mounted) return;
 
       if (redeemed) {
-        Navigator.of(context).pushReplacement(
+        final navigator = Navigator.of(context);
+        navigator.pushReplacement(
           MaterialPageRoute(builder: (context) => CloudShell(profile: profile)),
         );
+        _showWelcomeDeck(navigator, profile);
         return;
       }
 
@@ -236,9 +252,11 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         'valid code later from the role switcher.',
         duration: const Duration(seconds: 7),
       );
-      Navigator.of(context).pushReplacement(
+      final navigator = Navigator.of(context);
+      navigator.pushReplacement(
         MaterialPageRoute(builder: (context) => RunnerShell(profile: profile)),
       );
+      _showWelcomeDeck(navigator, profile);
     } on AuthException catch (error) {
       if (mounted) setState(() => _errorMessage = error.message);
     } catch (_) {

@@ -41,6 +41,43 @@ Uri mailtoUri(String email, {String? subject, String? body}) {
   );
 }
 
+/// The Gmail app's compose screen, addressed to [email]. (`googlegmail:` is
+/// the scheme the Gmail app registers on iOS and Android; the `/co` path is
+/// its compose action.)
+Uri gmailComposeUri(String email, {String? subject, String? body}) {
+  return Uri.parse(
+    'googlegmail:///co?${_encodeQuery({
+          'to': email.trim(),
+          if (subject != null && subject.isNotEmpty) 'subject': subject,
+          if (body != null && body.isNotEmpty) 'body': body,
+        })}',
+  );
+}
+
+/// The Outlook app's compose screen, addressed to [email].
+Uri outlookComposeUri(String email, {String? subject, String? body}) {
+  return Uri.parse(
+    'ms-outlook://compose?${_encodeQuery({
+          'to': email.trim(),
+          if (subject != null && subject.isNotEmpty) 'subject': subject,
+          if (body != null && body.isNotEmpty) 'body': body,
+        })}',
+  );
+}
+
+/// Whether the device has an app for [uri]'s scheme — false, never a throw,
+/// when the platform can't say. Only trustworthy for schemes declared in
+/// ios/Runner/Info.plist (LSApplicationQueriesSchemes) and the Android
+/// manifest's `<queries>`; see [tryLaunch] for why.
+Future<bool> canOpen(Uri uri) async {
+  try {
+    return await canLaunchUrl(uri);
+  } catch (error) {
+    debugPrint('Could not query ${uri.scheme}: link — $error');
+    return false;
+  }
+}
+
 /// Opens [uri] outside the app. Returns false — never throws — if nothing on
 /// the device could open it.
 ///
@@ -68,6 +105,11 @@ Future<void> launchOrNotify(
   final opened = await tryLaunch(uri, mode: mode);
   if (!opened && context.mounted) showBookplateNotice(context, unavailable);
 }
+
+/// Where a church learns about, buys, or enlarges a Trellis license. Linked
+/// from the Cloud access-code screen (no code yet) and the Treasury (more
+/// licenses) — one address, so it only ever needs changing here.
+const String churchLicenseUrl = 'https://www.unhinderedlives.com/trellis';
 
 /// Opens a web page in the device's browser, with a notice if it can't.
 Future<void> openWebPage(BuildContext context, String url) => launchOrNotify(

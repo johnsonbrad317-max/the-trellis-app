@@ -50,8 +50,12 @@ Future<void> main() async {
     NotificationRouter.initialize();
   });
   // On-device reminders (daily check-in, prayer list). Starting it never
-  // asks for notification permission; that happens after sign-in.
-  await _startOptional('Reminders', LocalReminders.initialize);
+  // asks for notification permission; that happens after sign-in. A tapped
+  // reminder opens the tab it is about.
+  await _startOptional(
+    'Reminders',
+    () => LocalReminders.initialize(onTap: NotificationRouter.handleReminderTap),
+  );
   await _startOptional('Analytics', AnalyticsService.initialize);
   await _startOptional('Purchases', PurchasesService.initialize);
 

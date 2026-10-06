@@ -5,17 +5,22 @@ import '../models/runner_profile.dart';
 import '../models/user_role.dart';
 import '../screens/runner_shell.dart';
 import '../screens/witness_shell.dart';
+import 'local_reminders.dart';
 
-/// Routes a tapped push notification to the right screen.
+/// Routes a tapped notification to the right screen.
 ///
-/// Every notification this app sends carries a `data.type` matching one of
-/// push-notification-engine's event types (see supabase/functions/
-/// push-notification-engine/index.ts) — this is the client-side mirror of
-/// that same small set of cases. Two delivery paths both end up here:
+/// Pushes: every notification the server sends carries a `data.type`
+/// matching one of push-notification-engine's event types (see
+/// supabase/functions/push-notification-engine/index.ts) — this is the
+/// client-side mirror of that same small set of cases. Two delivery paths
+/// both end up here:
 ///   - the app was already running (background or foreground) and the user
 ///     taps the system notification -> [FirebaseMessaging.onMessageOpenedApp]
 ///   - the app was fully killed and the notification tap is what launched
 ///     it -> [FirebaseMessaging.getInitialMessage]
+///
+/// On-device reminders ([LocalReminders]) arrive through
+/// [handleReminderTap] instead, with the reminder's payload.
 class NotificationRouter {
   NotificationRouter._();
 
@@ -31,21 +36,48 @@ class NotificationRouter {
     });
   }
 
-  static Future<void> _handleTap(RemoteMessage message) async {
-    // Cold start from a killed app: main() is still racing loadCurrent()
-    // against this tap. RunnerProfile.current only exists once that
-    // finishes, so wait for it rather than silently dropping the tap.
+  /// A tapped check-in or prayer reminder lands on the tab it is about —
+  /// the Rule of Life tab (where the Daily Check-In lives) or the Prayer tab
+  /// — rather than wherever the app happened to be left. Unknown payloads
+  /// are ignored.
+  static Future<void> handleReminderTap(String payload) async {
+    final tab = switch (payload) {
+      LocalReminders.checkInPayload => RunnerTab.ruleOfLife,
+      LocalReminders.prayerPayload => RunnerTab.prayer,
+      _ => null,
+    };
+    if (tab == null) return;
+
+    final ready = await _waitForProfileAndNavigator();
+    if (ready == null) return;
+    _goToRunnerShell(ready.navigator, ready.profile, tab: tab);
+  }
+
+  /// Cold start from a killed app: main() is still racing loadCurrent()
+  /// against this tap — RunnerProfile.current only exists once that finishes
+  /// and the navigator only once runApp has built — so wait for both (a few
+  /// seconds at most) rather than silently dropping the tap. Null if the
+  /// person isn't signed in by then.
+  static Future<({RunnerProfile profile, NavigatorState navigator})?>
+      _waitForProfileAndNavigator() async {
     var profile = RunnerProfile.current;
+    var navigator = navigatorKey.currentState;
     var waited = 0;
-    while (profile == null && waited < 5000) {
+    while ((profile == null || navigator == null) && waited < 8000) {
       await Future<void>.delayed(const Duration(milliseconds: 250));
       waited += 250;
       profile = RunnerProfile.current;
+      navigator = navigatorKey.currentState;
     }
-    if (profile == null) return;
+    if (profile == null || navigator == null) return null;
+    return (profile: profile, navigator: navigator);
+  }
 
-    final navigator = navigatorKey.currentState;
-    if (navigator == null) return;
+  static Future<void> _handleTap(RemoteMessage message) async {
+    final ready = await _waitForProfileAndNavigator();
+    if (ready == null) return;
+    final profile = ready.profile;
+    final navigator = ready.navigator;
 
     final data = message.data;
     switch (data['type']) {
@@ -90,10 +122,14 @@ class NotificationRouter {
     );
   }
 
-  static void _goToRunnerShell(NavigatorState navigator, RunnerProfile profile) {
+  static void _goToRunnerShell(
+    NavigatorState navigator,
+    RunnerProfile profile, {
+    RunnerTab tab = RunnerTab.dashboard,
+  }) {
     if (profile.role != UserRole.runner) profile.setRole(UserRole.runner);
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => RunnerShell(profile: profile)),
+      MaterialPageRoute(builder: (_) => RunnerShell(profile: profile, initialTab: tab)),
       (route) => false,
     );
   }

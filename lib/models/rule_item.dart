@@ -116,6 +116,7 @@ class RuleItem {
     this.isChurchMandated = false,
     this.createdAt,
     this.unlockedUntil,
+    this.dnaRhythmId,
   }) : weeklyDays = weeklyDays ?? <int>{};
 
   factory RuleItem.fromRow(Map<String, dynamic> row) => RuleItem(
@@ -132,6 +133,7 @@ class RuleItem {
         // Absent on a database that predates migration 021 — then nothing is
         // ever "unlocked", which is also what the server would say.
         unlockedUntil: _parseTime(row['unlocked_until']),
+        dnaRhythmId: row['dna_rhythm_id'] as String?,
       );
 
   static DateTime? _parseTime(Object? value) =>
@@ -175,6 +177,11 @@ class RuleItem {
 
   /// Until when a Witness's approval keeps this rhythm open for changes.
   DateTime? unlockedUntil;
+
+  /// The church DNA Rhythm this copy came from (migration 023); null for a
+  /// Runner's own rhythm, for one whose DNA Rhythm has since been retired,
+  /// and on a database that predates the column. Read-only to the app.
+  final String? dnaRhythmId;
 
   /// The moment this rhythm stops being freely editable: [ruleSettlePeriod]
   /// after the Rule of Life was committed, or after the rhythm was added if

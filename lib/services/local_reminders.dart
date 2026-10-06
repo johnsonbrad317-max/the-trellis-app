@@ -42,14 +42,14 @@ class LocalReminders {
     firstId: 1000,
     title: 'Daily Check-In',
     body: 'Take a moment to check in on your Rule of Life.',
-    payload: 'check_in',
+    payload: checkInPayload,
   );
 
   static const _Reminder _prayer = _Reminder(
     firstId: 2000,
     title: 'Prayer Garden',
     body: 'Your prayer list is waiting.',
-    payload: 'prayer',
+    payload: prayerPayload,
   );
 
   /// The status-bar silhouette already used for Firebase pushes
@@ -107,11 +107,39 @@ class LocalReminders {
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
+  /// The payload of a tapped reminder: `check_in` or `prayer`.
+  static const String checkInPayload = 'check_in';
+  static const String prayerPayload = 'prayer';
+
+  /// Told about every reminder the person taps, with its payload — set by
+  /// [initialize]. Two routes lead here: the app was running (or in the
+  /// background) when the notification was tapped, and the app was fully
+  /// closed and the tap is what launched it (reported by the plugin's
+  /// launch details once the plugin has started).
+  static void Function(String payload)? _onTap;
+
   /// Call once at app start. No-op on web / unsupported platforms. Does NOT
   /// trigger the OS permission prompt (permission is asked after sign-in, by
-  /// [requestPermission]).
-  static Future<void> initialize() async {
-    await _ensureInitialized();
+  /// [requestPermission]). [onTap] receives the payload of any reminder the
+  /// person taps, including the one that may have launched the app.
+  static Future<void> initialize({void Function(String payload)? onTap}) async {
+    _onTap = onTap;
+    if (!await _ensureInitialized() || onTap == null) return;
+    try {
+      final launch = await _plugin.getNotificationAppLaunchDetails().timeout(_callTimeout);
+      final payload = launch?.notificationResponse?.payload;
+      if ((launch?.didNotificationLaunchApp ?? false) && payload != null && payload.isNotEmpty) {
+        onTap(payload);
+      }
+    } catch (error) {
+      debugPrint('LocalReminders could not read launch details: $error');
+    }
+  }
+
+  static void _handleResponse(NotificationResponse response) {
+    final payload = response.payload;
+    if (payload == null || payload.isEmpty) return;
+    _onTap?.call(payload);
   }
 
   /// Asks the OS for notification permission if not already decided (iOS:
@@ -322,7 +350,12 @@ class LocalReminders {
       // The returned bool is not a success flag: on iOS it is "were the
       // requested permissions granted", which is false here by design since
       // none are requested at start-up. Failure is signalled by a throw.
-      await _plugin.initialize(settings: _initializationSettings).timeout(_callTimeout);
+      await _plugin
+          .initialize(
+            settings: _initializationSettings,
+            onDidReceiveNotificationResponse: _handleResponse,
+          )
+          .timeout(_callTimeout);
       return true;
     } catch (error) {
       debugPrint('LocalReminders.initialize failed: $error');

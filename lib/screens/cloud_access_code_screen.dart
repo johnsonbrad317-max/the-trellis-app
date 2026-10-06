@@ -4,6 +4,7 @@ import '../widgets/bookplate_app_bar.dart';
 import '../widgets/bookplate_dialog.dart';
 import '../widgets/brass_glyph.dart';
 import '../widgets/gradient_button.dart';
+import '../widgets/launch_link.dart';
 import '../widgets/trellis_scaffold.dart';
 
 /// Collects a church's enterprise-level Cloud Access Code before an account
@@ -52,12 +53,28 @@ class _CloudAccessCodeScreenState extends State<CloudAccessCodeScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                "The Cloud is an enterprise-level role for church leadership. Enter the "
-                "access code your church's enterprise license generated.",
+                'The Cloud is for church leadership. Enter the access code that came '
+                "with your church's license.",
                 style: textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 12),
+              // Where a code comes from, for the pastor who arrives here
+              // without one — the screen used to assume everyone had one.
+              Text(
+                "Don't have a code? Church licenses are set up through Unhindered Lives.",
+                style: textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+              Center(
+                child: BookplateButton(
+                  label: 'Learn how it works at unhinderedlives.com/trellis',
+                  variant: BookplateButtonVariant.link,
+                  compact: true,
+                  onPressed: () => openWebPage(context, churchLicenseUrl),
+                ),
+              ),
+              const SizedBox(height: 20),
               TextField(
                 controller: _codeController,
                 textCapitalization: TextCapitalization.characters,

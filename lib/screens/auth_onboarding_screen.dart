@@ -9,6 +9,7 @@ import '../widgets/launch_link.dart';
 import '../widgets/trellis_scaffold.dart';
 import 'profile_home.dart';
 import 'role_walkthrough_screen.dart';
+import 'welcome_walkthrough_screen.dart';
 
 /// Entry point for Runners and Witnesses: the Sign In screen — the app's
 /// true default landing state. Account creation (and the role walkthrough)
@@ -55,9 +56,17 @@ class _AuthOnboardingScreenState extends State<AuthOnboardingScreen> {
       await supabase.auth.signInWithPassword(email: email, password: password);
       final profile = await RunnerProfile.loadCurrent();
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
+      final navigator = Navigator.of(context);
+      navigator.pushReplacement(
         MaterialPageRoute(builder: (context) => shellForProfile(profile)),
       );
+      // First sign-in on this account: the "how The Trellis works" deck sits
+      // over the shell (which loads underneath) until Begin or Skip.
+      if (!profile.hasSeenWelcome) {
+        navigator.push(
+          MaterialPageRoute(builder: (context) => WelcomeWalkthroughScreen(profile: profile)),
+        );
+      }
     } on AuthException catch (error) {
       if (mounted) setState(() => _errorMessage = error.message);
     } catch (_) {

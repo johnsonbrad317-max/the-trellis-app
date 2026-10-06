@@ -8,15 +8,17 @@ import '../../widgets/bookplate_plate.dart';
 import '../../widgets/brass_chevron.dart';
 import '../../widgets/brass_glyph.dart';
 import '../../widgets/cloud_empty_state.dart';
+import '../../widgets/email_chooser_sheet.dart';
 import '../../widgets/launch_link.dart';
 import '../../widgets/vine_visualizer.dart';
 
-enum _RosterFilter { all, flourishing, unpaired, dormant }
+enum _RosterFilter { all, flourishing, drooping, unpaired, dormant }
 
 extension _RosterFilterLabel on _RosterFilter {
   String get label => switch (this) {
         _RosterFilter.all => 'All',
         _RosterFilter.flourishing => 'Flourishing Vines',
+        _RosterFilter.drooping => 'Drooping Vines',
         _RosterFilter.unpaired => 'Unpaired Runners',
         _RosterFilter.dormant => 'Dormant Vines',
       };
@@ -51,6 +53,11 @@ class _CloudRosterScreenState extends State<CloudRosterScreen> {
       final matchesFilter = switch (_filter) {
         _RosterFilter.all => true,
         _RosterFilter.flourishing => entry.vineStatus == VineStatus.fullBloom,
+        // The Runners whose season rate has fallen furthest — the ones a
+        // pastor most wants to find quickly. (Someone who has never checked
+        // in scores 0 too but isn't drooping; they haven't started.)
+        _RosterFilter.drooping =>
+          entry.vineStatus == VineStatus.drooping && !entry.hasNeverCheckedIn,
         _RosterFilter.unpaired => entry.isUnpaired,
         _RosterFilter.dormant => entry.isDormant,
       };
@@ -185,11 +192,7 @@ class _RosterCardState extends State<_RosterCard> {
 
   Future<void> _sendEmail(BuildContext context, String? email) async {
     if (email == null) return;
-    await launchOrNotify(
-      context,
-      mailtoUri(email),
-      unavailable: 'No email app is set up on this device. Their address is $email.',
-    );
+    await showEmailChooser(context, email: email);
   }
 
   /// The roster stores "never checked in" as a 999-day gap; say what that

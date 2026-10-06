@@ -190,6 +190,11 @@ class _PeriodSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
+    // Each half rounds its own outer corners (AM the top pair, PM the bottom
+    // pair) to the same radius as the frame. Clipping a square fill to the
+    // frame used to leave a hairline of parchment showing between the green
+    // and the brass at the PM half's bottom corners.
+    const radius = Radius.circular(12);
     Widget half({required String label, required bool pm}) {
       final selected = isPm == pm;
       return Semantics(
@@ -206,7 +211,12 @@ class _PeriodSwitch extends StatelessWidget {
             width: 64,
             height: 48,
             alignment: Alignment.center,
-            color: selected ? AppColors.forestGreen : AppColors.parchmentLight,
+            decoration: BoxDecoration(
+              color: selected ? AppColors.forestGreen : AppColors.parchmentLight,
+              borderRadius: pm
+                  ? const BorderRadius.vertical(bottom: radius)
+                  : const BorderRadius.vertical(top: radius),
+            ),
             child: Text(
               label,
               style: textTheme.titleMedium?.copyWith(
@@ -223,11 +233,12 @@ class _PeriodSwitch extends StatelessWidget {
     }
 
     return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+      // The brass frame is painted over the halves (not as a clip), so the
+      // fill runs right up underneath the border with no gap at the corners.
+      foregroundDecoration: BoxDecoration(
+        borderRadius: const BorderRadius.all(radius),
         border: Border.all(color: AppColors.antiqueBrass, width: 1.2),
       ),
-      clipBehavior: Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

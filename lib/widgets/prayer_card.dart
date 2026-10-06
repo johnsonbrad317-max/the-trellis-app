@@ -72,16 +72,8 @@ class PrayerCard extends StatelessWidget {
           service: photoService,
         ),
         const SizedBox(height: 14),
-        Text(
-          item.category.singularLabel.toUpperCase(),
-          textAlign: TextAlign.center,
-          style: textTheme.labelSmall?.copyWith(
-            color: AppColors.antiqueBrass,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 2.2,
-          ),
-        ),
-        const SizedBox(height: 4),
+        // No category kicker ("PERSON" / "SITUATION") above the name: the
+        // medallion already says which it is, and the label read as clutter.
         Text(item.title, textAlign: TextAlign.center, style: textTheme.headlineSmall),
         const SizedBox(height: 12),
         // A short rule with a brass leaf at its centre — the one ornament.

@@ -31,24 +31,37 @@ class ChurchProfileScreen extends StatelessWidget {
     return days.isEmpty ? 'Weekly' : 'Weekly · ${days.join(', ')}';
   }
 
-  Future<void> _confirmRemove(BuildContext context, DnaRhythm rhythm) async {
+  /// Retiring, not deleting: the church stops measuring the rhythm and stops
+  /// giving it to new members, but nobody's copy or history is taken away —
+  /// each member's becomes their own rhythm, open for a week to keep or let
+  /// go (see RunnerProfile.retireDnaRhythm).
+  Future<void> _confirmRetire(BuildContext context, DnaRhythm rhythm) async {
     final confirmed = await showBookplateConfirm(
       context,
-      title: 'Remove DNA Rhythm?',
-      message: 'This will cease tracking "${rhythm.title}" as a congregational metric for '
-          "the entire congregation, and it will stop being added to new Runners' Rule "
-          'of Life. Runners who already have it keep it on their own Rule of Life — '
-          'this cannot be undone from here.',
-      confirmLabel: 'Remove',
+      title: 'Retire DNA Rhythm?',
+      message: '"${rhythm.title}" leaves the church list: it stops being measured for the '
+          'congregation and is no longer given to new members. Everyone who has it keeps '
+          'it as their own rhythm, with their history, free to continue or remove it. '
+          'This cannot be undone from here.',
+      confirmLabel: 'Retire',
       cancelLabel: 'Cancel',
       destructive: true,
     );
     if (!confirmed || !context.mounted) return;
 
     try {
-      await profile.removeDnaRhythm(rhythm.title);
+      final released = await profile.retireDnaRhythm(rhythm);
+      if (!context.mounted) return;
+      showBookplateNotice(
+        context,
+        released == null
+            ? '"${rhythm.title}" retired.'
+            : released == 1
+                ? '"${rhythm.title}" retired. One member keeps it as their own rhythm.'
+                : '"${rhythm.title}" retired. $released members keep it as their own rhythm.',
+      );
     } catch (_) {
-      if (context.mounted) showBookplateNotice(context, "Couldn't remove that rhythm. Try again.");
+      if (context.mounted) showBookplateNotice(context, "Couldn't retire that rhythm. Try again.");
     }
   }
 
@@ -70,8 +83,8 @@ class ChurchProfileScreen extends StatelessWidget {
             Text('DNA Rhythms', style: textTheme.headlineSmall),
             const SizedBox(height: 4),
             Text(
-              'Core rhythms defining our congregational baseline — mandated for every '
-              'Runner in this church, now and as they join.',
+              'Practices your whole flock shares — measured together, for a season or '
+              "year-round, and placed on every member's Rule of Life now and as they join.",
               style: textTheme.bodyMedium,
             ),
             const SizedBox(height: 20),
@@ -92,7 +105,8 @@ class ChurchProfileScreen extends StatelessWidget {
                       Text(rhythm.title, style: textTheme.titleMedium),
                       const SizedBox(height: 2),
                       Text(
-                        '${rhythm.category.label} · ${_scheduleLabel(rhythm)}',
+                        '${rhythm.category.label} · ${_scheduleLabel(rhythm)}'
+                        '${rhythm.endsOn == null ? '' : ' · ${rhythm.seasonLabel}'}',
                         style: textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
@@ -110,10 +124,10 @@ class ChurchProfileScreen extends StatelessWidget {
                                 showDnaRhythmDialog(context, profile, existing: rhythm),
                           ),
                           BookplateButton(
-                            label: 'Remove',
+                            label: 'Retire',
                             compact: true,
                             variant: BookplateButtonVariant.danger,
-                            onPressed: () => _confirmRemove(context, rhythm),
+                            onPressed: () => _confirmRetire(context, rhythm),
                           ),
                         ],
                       ),

@@ -8,6 +8,7 @@ import '../widgets/bookplate_plate.dart' show BookplatePlate, BookplateSpinner;
 import '../widgets/trellis_scaffold.dart';
 import 'auth_onboarding_screen.dart';
 import 'profile_home.dart';
+import 'welcome_walkthrough_screen.dart';
 
 /// Boots straight past sign-in if a Supabase session is already active,
 /// otherwise falls through to [AuthOnboardingScreen].
@@ -52,10 +53,26 @@ class _RestoringSession extends StatefulWidget {
 }
 
 class _RestoringSessionState extends State<_RestoringSession> {
-  late Future<RunnerProfile> _profile = RunnerProfile.loadCurrent();
+  late Future<RunnerProfile> _profile = _load();
   bool _signedOut = false;
 
-  void _retry() => setState(() => _profile = RunnerProfile.loadCurrent());
+  void _retry() => setState(() => _profile = _load());
+
+  /// Loads the profile and, for an account that has never been shown the
+  /// welcome walkthrough, shows it before the shell. The future resolves only
+  /// once the deck is dismissed (Begin/Skip), so the spinner waits underneath
+  /// it and the shell is then built exactly as before. A load failure
+  /// propagates untouched to the retry screen below. (Account creation has
+  /// its own role walkthrough and never passes through here.)
+  Future<RunnerProfile> _load() async {
+    final profile = await RunnerProfile.loadCurrent();
+    if (profile.hasSeenWelcome) return profile;
+    if (!mounted) return profile;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (context) => WelcomeWalkthroughScreen(profile: profile)),
+    );
+    return profile;
+  }
 
   /// The way out for a session that can never load (e.g. its profile row is
   /// gone): sign out, and fall through to the Sign In screen.

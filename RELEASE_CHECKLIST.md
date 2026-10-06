@@ -475,6 +475,19 @@ Migrations have always been applied by hand; there is no CLI migration history
       the roll-up goes out on Tuesdays (13:00 UTC), because Sunday's check-in
       is made on Monday; and build 1.0.0 (2) or later should reach testers
       within that week, since older builds don't understand "set" rhythms.
+- [ ] `023_dna_seasons_merge_welcome.sql` — run after 021 and 022. Links each
+      church rhythm on a Runner's Rule of Life to the DNA Rhythm it came from
+      (`rule_items.dna_rhythm_id`, backfilled by name), DNA Rhythm seasons
+      (`dna_rhythms.ends_on`), retiring a DNA Rhythm without deleting anyone's
+      rhythm or history (`retire_dna_rhythm`, and a trigger so the app's direct
+      delete behaves the same: members keep the rhythm as their own with a
+      7-day free-edit window), a daily **pg_cron** job `trellis-dna-season-end`
+      (05:00 UTC) that retires ended seasons, `merge_rule_item_into_dna` for
+      folding a duplicate personal rhythm into a church one, and
+      `profiles.has_seen_welcome` (every existing account sees the welcome
+      walkthrough once — intended). If pg_cron is off, a notice says to enable
+      it and re-run the one block in section D.2. Run the verification queries
+      in section H (every dry run there rolls back).
 - [ ] Any file numbered above 021 that has appeared in `supabase/migrations/`
       since this checklist was written.
 

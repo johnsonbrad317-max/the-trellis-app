@@ -69,7 +69,103 @@ class _ConnectScreenState extends State<ConnectScreen> {
     });
   }
 
+  /// Whether this visit to the tab has already asked for meeting places —
+  /// asked once, not on every "Suggest a Meeting".
+  bool _askedForPlaces = false;
+
+  /// "Home · 12 Elm St · Work · …", or an invitation when nothing is on file.
+  String _meetingPlacesSummary() {
+    final parts = <String>[];
+    final home = _profile.homeAddress?.trim() ?? '';
+    final work = _profile.workAddress?.trim() ?? '';
+    if (home.isNotEmpty) parts.add('Home · $home');
+    if (work.isNotEmpty) parts.add('Work · $work');
+    if (parts.isEmpty) return 'Add your home and work so meeting spots can land midway.';
+    return parts.join('\n');
+  }
+
+  /// Enter or change the home / work addresses — the same two fields the
+  /// first-run gate asks for, now reachable any time. Returns true if saved.
+  Future<bool> _editMeetingPlaces() async {
+    final homeController = TextEditingController(text: _profile.homeAddress ?? '');
+    final workController = TextEditingController(text: _profile.workAddress ?? '');
+
+    final saved = await showBookplateForm<bool>(
+      context,
+      title: 'Meeting Places',
+      message: 'Where you start from, so meeting suggestions can land somewhere fair '
+          'between you and your Witness. Only you and the suggestion engine see these.',
+      bodyBuilder: (dialogContext, setDialogState) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: homeController,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
+            keyboardType: TextInputType.streetAddress,
+            decoration: const InputDecoration(labelText: 'Home Address'),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: workController,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.done,
+            keyboardType: TextInputType.streetAddress,
+            decoration: const InputDecoration(labelText: 'Work Address'),
+          ),
+        ],
+      ),
+      actionsBuilder: (dialogContext, setDialogState) => [
+        BookplateButton(
+          label: 'Save',
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+        ),
+        BookplateButton(
+          label: 'Cancel',
+          variant: BookplateButtonVariant.link,
+          compact: true,
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+        ),
+      ],
+    );
+    final home = homeController.text;
+    final work = workController.text;
+    disposeAfterBookplateClose([homeController, workController]);
+    if (saved != true || !mounted) return false;
+
+    try {
+      await _profile.updateMeetingPlaces(homeAddress: home, workAddress: work);
+    } catch (_) {
+      if (mounted) {
+        showBookplateNotice(context, "Couldn't save your meeting places. Check your connection.");
+      }
+      return false;
+    }
+    return true;
+  }
+
+  /// Before the first suggestion of a visit with no addresses on file: offer
+  /// to add them (and carry on either way — they are a help, not a gate).
+  Future<void> _offerMeetingPlacesIfMissing() async {
+    if (_askedForPlaces || _profile.hasMeetingPlaces) return;
+    _askedForPlaces = true;
+    final add = await showBookplateConfirm(
+      context,
+      title: 'Add Your Meeting Places?',
+      message: 'With your home and work on file, suggested meeting spots can land somewhere '
+          'fair for you both. You can add them later under Meeting Places.',
+      confirmLabel: 'Add now',
+      cancelLabel: 'Not now',
+    );
+    if (!add || !mounted) return;
+    await _editMeetingPlaces();
+  }
+
   Future<void> _showProposalModal() async {
+    await _offerMeetingPlacesIfMissing();
+    if (!mounted) return;
+
     // Seed the pickers with a sensible starting point — 48 hours out (or 2
     // hours for an emergency) — but the Runner can pick any future
     // date/time and any location from here.
@@ -422,6 +518,19 @@ class _ConnectScreenState extends State<ConnectScreen> {
             ),
             const CalendarsLinkButton(),
             const SizedBox(height: 4),
+            // Home / work, editable any time (the first-run gate used to be
+            // the only chance to enter them).
+            BookplatePlate(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: BookplateRow(
+                leading: const BrassGlyph(BrassGlyphKind.pin, color: AppColors.antiqueBrass),
+                title: 'Meeting Places',
+                subtitle: _meetingPlacesSummary(),
+                trailing: const BrassGlyph(BrassGlyphKind.forward),
+                onTap: _editMeetingPlaces,
+              ),
+            ),
+            const SizedBox(height: 12),
             BookplatePlate(
               child: Row(
                 children: [

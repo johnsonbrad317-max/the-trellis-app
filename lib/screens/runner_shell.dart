@@ -27,17 +27,24 @@ import 'runner/tabs/rule_of_life_tab.dart';
 /// the same underlying profile rather than resetting to a fresh mock, so
 /// membership/Witnesses/Rule of Life/etc. all carry over.
 class RunnerShell extends StatefulWidget {
-  const RunnerShell({super.key, required this.profile});
+  const RunnerShell({super.key, required this.profile, this.initialTab = RunnerTab.dashboard});
 
   final RunnerProfile profile;
+
+  /// The tab shown first — the Dashboard, except when a tapped reminder opens
+  /// the shell on the tab it is about (see NotificationRouter).
+  final RunnerTab initialTab;
 
   @override
   State<RunnerShell> createState() => _RunnerShellState();
 }
 
+/// The Runner shell's bottom tabs, in bar order.
+enum RunnerTab { dashboard, ruleOfLife, prayer, connect }
+
 class _RunnerShellState extends State<RunnerShell>
     with ShellDataLoad<RunnerShell> {
-  int _tabIndex = 0;
+  late int _tabIndex = widget.initialTab.index;
 
   RunnerProfile get _profile => widget.profile;
 

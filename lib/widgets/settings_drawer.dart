@@ -7,6 +7,7 @@ import '../models/user_role.dart';
 import '../screens/auth_onboarding_screen.dart';
 import '../screens/runner/account_settings_screen.dart';
 import '../screens/runner/settings_witnesses.dart';
+import '../screens/welcome_walkthrough_screen.dart';
 import '../services/calendar_service.dart';
 import '../services/local_reminders.dart';
 import '../theme/app_colors.dart';
@@ -17,6 +18,7 @@ import 'brass_glyph.dart';
 import 'calendar_connect_sheet.dart';
 import 'church_affiliation_dialog.dart';
 import 'custom_toggle.dart';
+import 'email_chooser_sheet.dart';
 import 'launch_link.dart';
 
 /// The "Calendars" row: opens the connect sheet, with a subtitle naming the
@@ -79,12 +81,10 @@ class SettingsDrawer extends StatelessWidget {
 
   static const _supportEmail = 'support@unhinderedlives.com';
 
-  Future<void> _contactSupport(BuildContext context) => launchOrNotify(
-        context,
-        mailtoUri(_supportEmail, subject: 'The Trellis App Support'),
-        // Still useful on a device with no mail app set up.
-        unavailable: 'No email app is set up on this device. Write to $_supportEmail.',
-      );
+  // Mail / Gmail / Outlook / copy — a bare mailto: opened only the phone's
+  // default mail app, which did nothing for people who never set one up.
+  Future<void> _contactSupport(BuildContext context) =>
+      showEmailChooser(context, email: _supportEmail, subject: 'The Trellis App Support');
 
   Future<void> _openLegal(BuildContext context, String url) => openWebPage(context, url);
 
@@ -348,6 +348,22 @@ class SettingsDrawer extends StatelessWidget {
                   leading: const BrassGlyph(BrassGlyphKind.bell),
                   title: 'Notification Settings',
                   onTap: () => _editNotificationSettings(context),
+                ),
+              ),
+              row(
+                BookplateRow(
+                  padding: rowPadding,
+                  leading: const BrassGlyph(BrassGlyphKind.leaf),
+                  title: 'How The Trellis Works',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            WelcomeWalkthroughScreen(profile: profile, firstRun: false),
+                      ),
+                    );
+                  },
                 ),
               ),
               row(

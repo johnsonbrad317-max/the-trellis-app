@@ -185,6 +185,7 @@ class RunnerProfile extends ChangeNotifier {
     required this.hasCommittedRule,
     this.ruleCommittedAt,
     this.phoneNumber,
+    this.hasSeenWelcome = true,
     required this.consumerHealthDataConsent,
     required this.checkInHistory,
     required this.prayerReminderTime,
@@ -264,6 +265,7 @@ class RunnerProfile extends ChangeNotifier {
       hasCommittedRule: profileRow['has_committed_rule'] as bool? ?? false,
       ruleCommittedAt: optional.ruleCommittedAt,
       phoneNumber: optional.phoneNumber,
+      hasSeenWelcome: optional.hasSeenWelcome,
       consumerHealthDataConsent: profileRow['consumer_health_data_consent'] as bool? ?? false,
       checkInHistory: CheckInEntry.fromRows(List<Map<String, dynamic>>.from(checkInRows)),
       prayerReminderTime: _timeFromDb(profileRow['prayer_reminder_time'] as String),
@@ -303,9 +305,8 @@ class RunnerProfile extends ChangeNotifier {
   /// Columns newer than the oldest database this build must still open
   /// against, each read on its own so that a column that isn't there yet
   /// (migration 021 not applied) costs only that one value — never sign-in.
-  static Future<({String? phoneNumber, DateTime? ruleCommittedAt})> _fetchOptionalProfileFields(
-    String userId,
-  ) async {
+  static Future<({String? phoneNumber, DateTime? ruleCommittedAt, bool hasSeenWelcome})>
+      _fetchOptionalProfileFields(String userId) async {
     Future<Object?> read(String column) async {
       try {
         final row = await supabase.from('profiles').select(column).eq('id', userId).single();
@@ -318,9 +319,13 @@ class RunnerProfile extends ChangeNotifier {
 
     final phone = await read('phone_number');
     final committedAt = await read('rule_committed_at');
+    final seenWelcome = await read('has_seen_welcome');
     return (
       phoneNumber: phone is String && phone.trim().isNotEmpty ? phone.trim() : null,
       ruleCommittedAt: committedAt is String ? DateTime.tryParse(committedAt)?.toLocal() : null,
+      // Without the column (migration 023 not applied) nobody is shown the
+      // welcome walkthrough automatically; it stays reachable from the menu.
+      hasSeenWelcome: seenWelcome is bool ? seenWelcome : true,
     );
   }
 
@@ -392,6 +397,23 @@ class RunnerProfile extends ChangeNotifier {
   /// the day after which a Witness starts seeing missed days. Null if not
   /// committed, or on a database that doesn't record it yet.
   DateTime? ruleCommittedAt;
+
+  /// Whether this account has been shown the welcome walkthrough (the slides
+  /// explaining Runner, Witness and Cloud). Shown once, after the first
+  /// sign-in; always available again from the menu.
+  bool hasSeenWelcome;
+
+  /// Records that the welcome walkthrough has been seen. Best-effort: a
+  /// failed write only means it may be shown once more.
+  Future<void> markWelcomeSeen() async {
+    hasSeenWelcome = true;
+    notifyListeners();
+    try {
+      await supabase.from('profiles').update({'has_seen_welcome': true}).eq('id', id);
+    } catch (error) {
+      debugPrint('markWelcomeSeen failed: ${error.runtimeType}');
+    }
+  }
 
   /// This person's own mobile number in international form (`+1…`), asked
   /// for at sign-up. Shown to the people they are paired with — their
@@ -1211,6 +1233,10 @@ class RunnerProfile extends ChangeNotifier {
       dnaRhythms
         ..clear()
         ..addAll([for (final row in dnaRows) DnaRhythm.fromRow(row)]);
+      // An empty table says nothing either way; keep the previous answer.
+      if (dnaRows.isNotEmpty) {
+        _dnaSeasonsSupported = dnaRows.any((row) => row.containsKey('ends_on'));
+      }
     });
 
     await section('church codes', () async {
@@ -1582,6 +1608,44 @@ class RunnerProfile extends ChangeNotifier {
     unawaited(refreshAnalytics());
   }
 
+  /// The church DNA Rhythm that [item] (one of the Runner's own rhythms)
+  /// looks like a duplicate of — same category, and a title that matches or
+  /// contains the other's — or null. A Runner who had "Sabbath" on their
+  /// Rule of Life before their church added "Sabbath Rest" ends up tracking
+  /// the same practice twice; this is what the Rule Builder's "Merge them"
+  /// offer is built on.
+  RuleItem? mergeCandidateFor(RuleItem item) {
+    if (item.isChurchMandated) return null;
+    String normalize(String title) =>
+        title.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), '').replaceAll(RegExp(r'\s+'), ' ');
+    final own = normalize(item.title);
+    if (own.length < 3) return null;
+    for (final candidate in ruleItems) {
+      if (!candidate.isChurchMandated || candidate.category != item.category) continue;
+      final dna = normalize(candidate.title);
+      if (dna.length < 3) continue;
+      if (own == dna || own.contains(dna) || dna.contains(own)) return candidate;
+    }
+    return null;
+  }
+
+  /// Folds one of the Runner's own rhythms into the church DNA Rhythm it
+  /// duplicates: its check-ins move onto the DNA Rhythm (on a day both were
+  /// answered, the DNA Rhythm's answer stands) and the duplicate is removed
+  /// — all server-side in one transaction (merge_rule_item_into_dna,
+  /// migration 023). Returns how many check-ins moved. Throws if the
+  /// database refuses (not the Runner's rows, wrong kind of pair).
+  Future<int> mergeRuleItemIntoDna({required String ownItemId, required String dnaItemId}) async {
+    final moved = await supabase.rpc(
+      'merge_rule_item_into_dna',
+      params: {'p_own_item_id': ownItemId, 'p_dna_item_id': dnaItemId},
+    );
+    ruleItems.removeWhere((item) => item.id == ownItemId);
+    notifyListeners();
+    unawaited(refreshAnalytics());
+    return moved is int ? moved : int.tryParse('$moved') ?? 0;
+  }
+
   /// Asks [witnessId] for permission to unlock a rhythm — a church-mandated
   /// DNA Rhythm, or any rhythm that has become set ([isRuleItemSet]) — so it
   /// can be edited or removed. The caller (rule_builder_screen.dart) picks
@@ -1844,6 +1908,37 @@ class RunnerProfile extends ChangeNotifier {
     }).eq('id', id);
   }
 
+  /// Whether at least one meeting place (home or work) is on file.
+  bool get hasMeetingPlaces =>
+      (homeAddress?.trim().isNotEmpty ?? false) || (workAddress?.trim().isNotEmpty ?? false);
+
+  /// Changes the home / work addresses on their own, any time after the
+  /// first-run scheduling gate — which used to be the only place they could
+  /// be entered, so skipping it meant never having them. Blank clears one.
+  Future<void> updateMeetingPlaces({String? homeAddress, String? workAddress}) async {
+    String? clean(String? value) {
+      final trimmed = value?.trim() ?? '';
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    final previousHome = this.homeAddress;
+    final previousWork = this.workAddress;
+    this.homeAddress = clean(homeAddress);
+    this.workAddress = clean(workAddress);
+    notifyListeners();
+    try {
+      await supabase.from('profiles').update({
+        'home_address': this.homeAddress,
+        'work_address': this.workAddress,
+      }).eq('id', id);
+    } catch (_) {
+      this.homeAddress = previousHome;
+      this.workAddress = previousWork;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   Future<String> proposeMeeting({
     required String witnessId,
     required DateTime time,
@@ -2068,6 +2163,13 @@ class RunnerProfile extends ChangeNotifier {
     return true;
   }
 
+  /// Whether the database knows about DNA Rhythm seasons (migration 023's
+  /// `ends_on`). Learned from the rows already loaded: the select is
+  /// table-wide, so the key is present — null or dated — once the column
+  /// exists. False (no seasons offered) while nothing is loaded.
+  bool get dnaSeasonsSupported => _dnaSeasonsSupported;
+  bool _dnaSeasonsSupported = false;
+
   Future<void> addDnaRhythm(DnaRhythm rhythm) async {
     final targetChurchId = cloudAdminChurchId;
     if (targetChurchId == null) return;
@@ -2077,6 +2179,7 @@ class RunnerProfile extends ChangeNotifier {
         .select()
         .single();
     dnaRhythms.add(DnaRhythm.fromRow(row));
+    _dnaSeasonsSupported = row.containsKey('ends_on');
     notifyListeners();
   }
 
@@ -2092,6 +2195,25 @@ class RunnerProfile extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Retires a DNA Rhythm for the whole church: nobody's copy is deleted —
+  /// each member's becomes their own rhythm (no longer mandated, open for a
+  /// week so they can keep or remove it), with its check-in history intact
+  /// (retire_dna_rhythm, migration 023; a plain delete releases the copies
+  /// the same way through a trigger, which is the path taken for a rhythm
+  /// read without an id). Returns how many members' copies were released,
+  /// or null when that isn't known.
+  Future<int?> retireDnaRhythm(DnaRhythm rhythm) async {
+    final rhythmId = rhythm.id;
+    if (rhythmId == null) {
+      await removeDnaRhythm(rhythm.title);
+      return null;
+    }
+    final released = await supabase.rpc('retire_dna_rhythm', params: {'p_dna_rhythm_id': rhythmId});
+    dnaRhythms.removeWhere((candidate) => candidate.id == rhythmId);
+    notifyListeners();
+    return released is int ? released : int.tryParse('$released');
+  }
+
   Future<void> updateDnaRhythm(String oldTitle, DnaRhythm updated) async {
     final targetChurchId = cloudAdminChurchId;
     if (targetChurchId == null) return;
@@ -2099,9 +2221,11 @@ class RunnerProfile extends ChangeNotifier {
     // least one) and carries the edit through to every Runner's mandated
     // copy (propagate_dna_rhythm_edit, migration 012) — so read the saved
     // row back rather than trusting what was typed.
+    // The season (ends_on) is only written once the database has the column
+    // (migration 023) — known from the rows read back carrying an id.
     final row = await supabase
         .from('dna_rhythms')
-        .update(updated.toUpdateRow())
+        .update(updated.toUpdateRow(includeSeason: updated.endsOn != null || dnaSeasonsSupported))
         .eq('church_id', targetChurchId)
         .eq('title', oldTitle)
         .select()

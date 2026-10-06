@@ -695,6 +695,30 @@ class _RuleItemTile extends StatelessWidget {
     }
   }
 
+  /// Folds this rhythm into the church DNA Rhythm it duplicates (see
+  /// RunnerProfile.mergeCandidateFor): check-ins move across, the duplicate
+  /// goes. Confirmed first — it removes a rhythm.
+  Future<void> _merge(BuildContext context, RuleItem into) async {
+    final confirmed = await showBookplateConfirm(
+      context,
+      title: 'Merge into the church rhythm?',
+      message: '"${item.title}" will be folded into "${into.title}". Your check-ins for it '
+          'move across (where both were answered on the same day, the church rhythm\'s '
+          'answer stands), and "${item.title}" is removed from your Rule of Life.',
+      confirmLabel: 'Merge',
+      cancelLabel: 'Keep both',
+    );
+    if (!confirmed || !context.mounted) return;
+    try {
+      await profile.mergeRuleItemIntoDna(ownItemId: item.id, dnaItemId: into.id);
+    } catch (_) {
+      if (context.mounted) showBookplateNotice(context, "Couldn't merge those rhythms. Try again.");
+      return;
+    }
+    if (!context.mounted) return;
+    showBookplateNotice(context, 'Merged — your check-ins now count toward "${into.title}".');
+  }
+
   static String _formatUnlockDeadline(DateTime until) {
     final hour = until.hour % 12 == 0 ? 12 : until.hour % 12;
     final minute = until.minute.toString().padLeft(2, '0');
@@ -717,6 +741,7 @@ class _RuleItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final mergeInto = profile.mergeCandidateFor(item);
 
     // The double-line bookplate border (1px outer, 4px gap, 1px inner) used
     // for the role cards and sign-in panel, plus a soft diffused shadow, so
@@ -787,6 +812,31 @@ class _RuleItemTile extends StatelessWidget {
                 ],
               ),
             ),
+            if (mergeInto != null) ...[
+              const SizedBox(height: 8),
+              // The Runner's own rhythm merges INTO the church's, never the
+              // other way round: the DNA Rhythm stays, with the history of both.
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Text(
+                    'Already doing this as "${mergeInto.title}"?',
+                    style: textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: AppColors.antiqueBrass,
+                    ),
+                  ),
+                  BookplateButton(
+                    label: 'Merge them',
+                    compact: true,
+                    variant: BookplateButtonVariant.link,
+                    onPressed: () => _merge(context, mergeInto),
+                  ),
+                ],
+              ),
+            ],
             if (item.isChurchMandated || _isSet) ...[
               const SizedBox(height: 6),
               Row(
@@ -795,7 +845,7 @@ class _RuleItemTile extends StatelessWidget {
                   const SizedBox(width: 8),
                   Flexible(
                     child: BookplateTag(
-                      label: item.isChurchMandated ? 'DNA Rhythm · Mandated' : 'Set',
+                      label: item.isChurchMandated ? 'DNA Rhythm · From your church' : 'Set',
                       color: AppColors.antiqueBrass,
                     ),
                   ),

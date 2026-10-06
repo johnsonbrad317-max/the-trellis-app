@@ -123,6 +123,17 @@
             <data android:scheme="mailto" />
         </intent>
 
+        <!-- canLaunchUrl(googlegmail: / ms-outlook:) — the email chooser
+             lists Gmail and Outlook only when they are installed. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="googlegmail" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="ms-outlook" />
+        </intent>
+
         <!-- canLaunchUrl(https://...) — terms, privacy, learn-more links. -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
