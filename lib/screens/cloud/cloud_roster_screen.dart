@@ -4,6 +4,7 @@ import '../../models/church_roster_entry.dart';
 import '../../models/runner_profile.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_chip.dart';
+import '../../widgets/bookplate_dialog.dart';
 import '../../widgets/bookplate_plate.dart';
 import '../../widgets/brass_chevron.dart';
 import '../../widgets/brass_glyph.dart';
@@ -153,7 +154,11 @@ class _CloudRosterScreenState extends State<CloudRosterScreen> {
             )
           else
             for (final entry in entries) ...[
-              _RosterCard(key: ValueKey(entry.id), entry: entry),
+              _RosterCard(
+                key: ValueKey(entry.id),
+                entry: entry,
+                preview: widget.profile.isPreview,
+              ),
               const SizedBox(height: 12),
             ],
           ],
@@ -164,9 +169,13 @@ class _CloudRosterScreenState extends State<CloudRosterScreen> {
 }
 
 class _RosterCard extends StatefulWidget {
-  const _RosterCard({super.key, required this.entry});
+  const _RosterCard({super.key, required this.entry, required this.preview});
 
   final ChurchRosterEntry entry;
+
+  /// Sample data (the Cloud preview): Text and Email say so instead of
+  /// reaching out to anyone.
+  final bool preview;
 
   @override
   State<_RosterCard> createState() => _RosterCardState();
@@ -181,8 +190,14 @@ class _RosterCardState extends State<_RosterCard> {
         VineStatus.drooping => AppColors.terracotta,
       };
 
+  bool _refusedInPreview(BuildContext context) {
+    if (!widget.preview) return false;
+    showBookplateNotice(context, PreviewModeException.message);
+    return true;
+  }
+
   Future<void> _sendSms(BuildContext context, String? phone) async {
-    if (phone == null) return;
+    if (phone == null || _refusedInPreview(context)) return;
     await launchOrNotify(
       context,
       smsUri(phone),
@@ -191,7 +206,7 @@ class _RosterCardState extends State<_RosterCard> {
   }
 
   Future<void> _sendEmail(BuildContext context, String? email) async {
-    if (email == null) return;
+    if (email == null || _refusedInPreview(context)) return;
     await showEmailChooser(context, email: email);
   }
 

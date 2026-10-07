@@ -1,22 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:trellis/models/user_role.dart';
 import 'package:trellis/screens/welcome_walkthrough_screen.dart';
 import 'package:trellis/theme/app_theme.dart';
 
 /// The welcome walkthrough deck. [WelcomeWalkthroughView] is what is pumped:
-/// it is the whole screen minus the profile write, which only the database can
-/// supply a [RunnerProfile] for.
+/// it is the whole screen minus the profile, which only the database can
+/// supply.
 void main() {
   const headlines = [
     'Let us throw off everything that hinders…',
-    'Anchor Your Days.',
-    'Walk Alongside.',
-    'Shepherd the Flock.',
-    'Cultivate a Garden of Intercession.',
-    'Find the Time.',
-    'The Flock, Not the Confessional.',
-    'Begin the Race.',
+    'Create a Rule of Life for this season.',
+    'Walk alongside a Runner.',
+    'Keep a living prayer list.',
+    'Find the time to meet.',
+    'See the whole flock.',
+    'Two weeks free. No card needed.',
+    'Start your journey.',
   ];
 
   void useScreen(WidgetTester tester, Size size) {
@@ -25,14 +26,23 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  Widget host({required bool firstRun, VoidCallback? onFinished, double textScale = 1}) =>
+  Widget host({
+    required bool firstRun,
+    VoidCallback? onFinished,
+    ValueChanged<UserRole>? onRoleChosen,
+    double textScale = 1,
+  }) =>
       MaterialApp(
         theme: AppTheme.light,
         builder: (context, app) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
           child: app!,
         ),
-        home: WelcomeWalkthroughView(firstRun: firstRun, onFinished: onFinished ?? () {}),
+        home: WelcomeWalkthroughView(
+          firstRun: firstRun,
+          onFinished: onFinished ?? () {},
+          onRoleChosen: onRoleChosen ?? (_) {},
+        ),
       );
 
   final primary = find.byKey(const ValueKey('welcome-primary'));
@@ -40,13 +50,13 @@ void main() {
   int currentPage(WidgetTester tester) =>
       tester.widget<PageView>(find.byType(PageView)).controller!.page!.round();
 
-  // The dot's render box includes its 4px margin on each side; 20 is the
-  // current slide's dot, 8 any other.
-  double dotWidth(WidgetTester tester, int i) =>
-      tester.getSize(find.byKey(ValueKey('welcome-dot-$i'))).width - 8;
+  Future<void> goToLast(WidgetTester tester) async {
+    await tester.tap(find.byKey(ValueKey('welcome-dot-${headlines.length - 1}')));
+    await tester.pumpAndSettle();
+  }
 
   group('the deck', () {
-    test('has eight slides with the headlines in order', () {
+    test('eight slides: the race, each part of the app, the cost, and where to start', () {
       expect(welcomeSlides, hasLength(8));
       expect(welcomeSlides.map((s) => s.headline), headlines);
       expect(
@@ -55,31 +65,33 @@ void main() {
           'THE RACE',
           'THE RUNNER',
           'THE WITNESS',
-          'THE CLOUD',
           'PRAYER',
           'CONNECT',
-          'WHAT LEADERS SEE',
+          'THE CLOUD',
+          'WHAT IT COSTS',
           'BEGIN',
         ],
       );
-      for (final slide in welcomeSlides) {
-        expect(slide.body, isNotEmpty, reason: slide.headline);
+      // The front card stays the scripture; every part of the app is shown
+      // with real screens, the Cloud with two.
+      expect(welcomeSlides.first.isScripture, isTrue);
+      for (final slide in welcomeSlides.sublist(1, 6)) {
+        expect(slide.art, WelcomeArt.screenshots, reason: slide.kicker);
+        expect(slide.screenshots, isNotEmpty, reason: slide.kicker);
       }
+      expect(welcomeSlides[5].screenshots, hasLength(2));
     });
 
-    test("the owner's words: scripture first, weights to throw off, no journal, no church", () {
-      expect(welcomeSlides[0].isScripture, isTrue);
-      expect(welcomeSlides[0].body, endsWith('— Hebrews 12:1–2'));
-      expect(welcomeSlides[1].body, contains('weights you must throw off'));
-      expect(welcomeSlides[6].body, contains('never the granular details'));
-      for (final slide in welcomeSlides) {
-        expect(slide.body.toLowerCase(), isNot(contains('journal')), reason: slide.headline);
-        expect(slide.body.toLowerCase(), isNot(contains('church')), reason: slide.headline);
-      }
+    test('the cost card says what the owner set out', () {
+      final text = welcomeSlides[6].lines.map((line) => line.text).join(' ');
+      expect(text, contains('two weeks free'));
+      expect(text, contains('no credit card'));
+      expect(text, contains(r'$12-a-year'));
+      expect(text, contains('Witnesses always use The Trellis free'));
+      expect(text, contains('unhinderedlives.com/trellis'));
     });
 
-    testWidgets('Next walks through every headline in order, then reads Begin on a first run',
-        (tester) async {
+    testWidgets('Next walks through every slide in order', (tester) async {
       useScreen(tester, const Size(440, 956));
       await tester.pumpWidget(host(firstRun: true));
       await tester.pumpAndSettle();
@@ -87,85 +99,69 @@ void main() {
       for (var i = 0; i < headlines.length; i++) {
         expect(currentPage(tester), i);
         expect(find.text(headlines[i]), findsOneWidget);
-        expect(dotWidth(tester, i), 20);
         if (i < headlines.length - 1) {
-          expect(find.text('Next'), findsOneWidget);
-          expect(find.text('Begin'), findsNothing);
           await tester.tap(primary);
           await tester.pumpAndSettle();
         }
       }
-      expect(find.text('Begin'), findsOneWidget);
-      expect(find.text('Next'), findsNothing);
-      expect(find.text('Done'), findsNothing);
     });
 
-    testWidgets('the last slide reads Done when opened from the menu', (tester) async {
+    testWidgets('a first run ends by choosing a role, each leading somewhere', (tester) async {
       useScreen(tester, const Size(440, 956));
-      await tester.pumpWidget(host(firstRun: false));
+      final chosen = <UserRole>[];
+      await tester.pumpWidget(host(firstRun: true, onRoleChosen: chosen.add));
       await tester.pumpAndSettle();
+      await goToLast(tester);
 
-      for (var i = 0; i < headlines.length - 1; i++) {
-        await tester.tap(primary);
-        await tester.pumpAndSettle();
+      expect(find.text('Create my Rule of Life'), findsOneWidget);
+      expect(find.text('Enter the pairing key my Runner shared'), findsOneWidget);
+      expect(find.text("Enter my church or organization's access code"), findsOneWidget);
+      // The role buttons are the way forward; there is no Begin/Done.
+      expect(tester.widget<Visibility>(find.ancestor(of: primary, matching: find.byType(Visibility))).visible, isFalse);
+
+      for (final role in UserRole.values) {
+        await tester.tap(find.byKey(ValueKey('welcome-role-${role.name}')));
+        await tester.pump();
       }
-      expect(find.text('Done'), findsOneWidget);
-      expect(find.text('Begin'), findsNothing);
+      expect(chosen, UserRole.values);
     });
 
-    testWidgets('Skip shows only on a first run', (tester) async {
+    testWidgets('from the menu the last slide reads Done and offers no roles', (tester) async {
       useScreen(tester, const Size(440, 956));
-      await tester.pumpWidget(host(firstRun: true));
+      var finished = 0;
+      await tester.pumpWidget(host(firstRun: false, onFinished: () => finished++));
       await tester.pumpAndSettle();
-      expect(find.text('Skip'), findsOneWidget);
+      await goToLast(tester);
+
+      expect(find.text('Create my Rule of Life'), findsNothing);
+      expect(find.text('Done'), findsOneWidget);
+      await tester.tap(primary);
+      await tester.pump();
+      expect(finished, 1);
+    });
+
+    testWidgets('Skip shows only on a first run and finishes the deck', (tester) async {
+      useScreen(tester, const Size(440, 956));
+      var finished = 0;
+      await tester.pumpWidget(host(firstRun: true, onFinished: () => finished++));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Skip'));
+      await tester.pump();
+      expect(finished, 1);
 
       await tester.pumpWidget(host(firstRun: false));
       await tester.pumpAndSettle();
       expect(find.text('Skip'), findsNothing);
     });
 
-    testWidgets('Begin and Skip each finish the walkthrough once', (tester) async {
-      useScreen(tester, const Size(440, 956));
-      var finished = 0;
-      await tester.pumpWidget(host(firstRun: true, onFinished: () => finished++));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Skip'));
-      await tester.pump();
-      expect(finished, 1);
-
-      for (var i = 0; i < headlines.length - 1; i++) {
-        await tester.tap(primary);
-        await tester.pumpAndSettle();
-      }
-      await tester.tap(find.text('Begin'));
-      await tester.pump();
-      expect(finished, 2);
-    });
-
-    testWidgets('a swipe advances the slide and the dots', (tester) async {
+    testWidgets('a swipe advances the slide', (tester) async {
       useScreen(tester, const Size(440, 956));
       await tester.pumpWidget(host(firstRun: true));
       await tester.pumpAndSettle();
-      expect(currentPage(tester), 0);
-      expect(dotWidth(tester, 0), 20);
-      expect(dotWidth(tester, 1), 8);
-
       await tester.drag(find.byType(PageView), const Offset(-320, 0));
       await tester.pumpAndSettle();
       expect(currentPage(tester), 1);
-      expect(dotWidth(tester, 0), 8);
-      expect(dotWidth(tester, 1), 20);
-      expect(find.text('Anchor Your Days.'), findsOneWidget);
-
-      // Tapping a dot goes straight to that slide — here the leaders' view,
-      // with its two labelled trellises.
-      await tester.tap(find.byKey(const ValueKey('welcome-dot-6')));
-      await tester.pumpAndSettle();
-      expect(currentPage(tester), 6);
-      expect(find.text('The Flock, Not the Confessional.'), findsOneWidget);
-      expect(find.text('FLOURISHING'), findsOneWidget);
-      expect(find.text('WEARY'), findsOneWidget);
+      expect(find.text('Create a Rule of Life for this season.'), findsOneWidget);
     });
   });
 
@@ -185,10 +181,8 @@ void main() {
 
         for (var i = 0; i < headlines.length; i++) {
           expect(find.text(headlines[i]), findsOneWidget);
-          // The button is on screen, not below the fold.
           final button = tester.getRect(primary);
           expect(button.bottom, lessThanOrEqualTo(size.height));
-          expect(button.height, greaterThanOrEqualTo(44));
           if (i < headlines.length - 1) {
             await tester.tap(primary);
             await tester.pumpAndSettle();

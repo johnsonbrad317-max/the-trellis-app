@@ -26,6 +26,8 @@ class PairAvailability {
     required this.otherSharing,
     this.meSyncedAt,
     this.otherSyncedAt,
+    this.myBusy = const [],
+    this.otherBusy = const [],
   });
 
   /// Nobody sharing / nothing known.
@@ -42,6 +44,13 @@ class PairAvailability {
 
   final DateTime? meSyncedAt;
   final DateTime? otherSyncedAt;
+
+  /// The busy blocks behind [suggestions], when both are sharing: mine (read
+  /// from this phone just now) and the other person's (as their phone last
+  /// uploaded them). Empty otherwise. For the activity-specific slot search
+  /// on this phone only (see meeting_activity.dart) — never sent anywhere.
+  final List<TimeSpan> myBusy;
+  final List<TimeSpan> otherBusy;
 
   bool get bothSharing => meSharing && otherSharing;
 

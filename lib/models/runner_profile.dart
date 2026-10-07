@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/analytics_service.dart';
 import '../services/local_reminders.dart';
+import '../services/meeting_spot_service.dart';
 import '../services/prayer_photo_service.dart';
 import '../services/push_notifications.dart';
 import '../services/purchases_service.dart';
@@ -23,6 +24,7 @@ import 'meeting_request.dart';
 import 'pairing_code_preview.dart';
 import 'pending_unlock_request.dart';
 import 'prayer_item.dart';
+import 'preview_sample_data.dart';
 import 'rhythm_analytics.dart';
 import 'rule_item.dart';
 import 'rule_of_life_baseline.dart';
@@ -84,6 +86,7 @@ enum NotificationCategory {
   anchorRhythmAlerts,
   weeklyRollUp,
   meetingRequests,
+  quietRunnerAlerts,
 }
 
 extension NotificationCategoryLabel on NotificationCategory {
@@ -93,6 +96,7 @@ extension NotificationCategoryLabel on NotificationCategory {
         NotificationCategory.anchorRhythmAlerts => 'Anchor Rhythm alerts',
         NotificationCategory.weeklyRollUp => 'Weekly roll-up from my Runners',
         NotificationCategory.meetingRequests => 'Meeting & prayer requests',
+        NotificationCategory.quietRunnerAlerts => 'Check-In Alerts',
       };
 
   /// Whether this category is relevant to `role` — the Notification
@@ -111,6 +115,10 @@ extension NotificationCategoryLabel on NotificationCategory {
         NotificationCategory.weeklyRollUp => role == UserRole.witness,
         // Both Runner and Witness send/receive meeting proposals.
         NotificationCategory.meetingRequests => role != UserRole.cloud,
+        // A Runner who goes quiet, hasn't started a Rule of Life, or may have
+        // removed the app (push-notification-engine's witness_nudge). Like the
+        // roll-up, the WITNESS's to mute — never the Runner's.
+        NotificationCategory.quietRunnerAlerts => role == UserRole.witness,
       };
 }
 
@@ -121,6 +129,7 @@ extension NotificationCategoryDb on NotificationCategory {
         NotificationCategory.anchorRhythmAlerts => 'anchor_rhythm_alerts',
         NotificationCategory.weeklyRollUp => 'weekly_roll_up',
         NotificationCategory.meetingRequests => 'meeting_requests',
+        NotificationCategory.quietRunnerAlerts => 'quiet_runner_alerts',
       };
 }
 
@@ -206,6 +215,7 @@ class RunnerProfile extends ChangeNotifier {
     required this.graceNudgeLog,
     required this.pendingUnlockRuleItemIds,
     required this.incomingUnlockRequests,
+    this.isPreview = false,
   });
 
   /// Fetches only the signed-in user's own profile, Rule of Life, and
@@ -408,6 +418,7 @@ class RunnerProfile extends ChangeNotifier {
   Future<void> markWelcomeSeen() async {
     hasSeenWelcome = true;
     notifyListeners();
+    if (isPreview) return;
     try {
       await supabase.from('profiles').update({'has_seen_welcome': true}).eq('id', id);
     } catch (error) {
@@ -584,7 +595,7 @@ class RunnerProfile extends ChangeNotifier {
   /// — mirrors the rest of this class's lazy-load-once convention rather
   /// than adding a separate per-screen subscribe/dispose lifecycle.
   void _ensureUnlockRequestsSubscribed() {
-    if (_unlockRequestsSubscribed) return;
+    if (_unlockRequestsSubscribed || isPreview) return;
     _unlockRequestsSubscribed = true;
 
     supabase
@@ -676,7 +687,7 @@ class RunnerProfile extends ChangeNotifier {
   /// it rethrows (the shell shows its "couldn't load" plate) and the next call
   /// tries again, so Retry works without restarting the app.
   Future<void> loadRunnerData() {
-    if (_runnerDataLoaded) return Future<void>.value();
+    if (_runnerDataLoaded || isPreview) return Future<void>.value();
     return _runnerDataLoad ??= () async {
       try {
         await _fetchRunnerData();
@@ -766,6 +777,7 @@ class RunnerProfile extends ChangeNotifier {
     String? ruleItemId,
     String? note,
   }) async {
+    _refuseInPreview();
     final int asked;
     try {
       asked = await supabase.rpc('create_support_request', params: {
@@ -793,6 +805,7 @@ class RunnerProfile extends ChangeNotifier {
   /// removing, or rescheduling a rhythm. Overlapping calls are safe: only the
   /// newest request's result is kept.
   Future<void> refreshAnalytics() async {
+    if (isPreview) return;
     final request = ++_analyticsRequest;
     try {
       final json = await supabase.rpc('get_runner_analytics') as Map<String, dynamic>;
@@ -814,7 +827,7 @@ class RunnerProfile extends ChangeNotifier {
   ///
   /// Same once-only, retry-after-failure contract as [loadRunnerData].
   Future<void> loadWitnessData() {
-    if (_witnessDataLoaded) return Future<void>.value();
+    if (_witnessDataLoaded || isPreview) return Future<void>.value();
     return _witnessDataLoad ??= () async {
       try {
         await _fetchWitnessData();
@@ -1124,7 +1137,7 @@ class RunnerProfile extends ChangeNotifier {
   /// that hasn't published `support_requests` yet can't take the unlock
   /// channel down with it.
   void _ensureSupportRequestsSubscribed() {
-    if (_supportRequestsSubscribed) return;
+    if (_supportRequestsSubscribed || isPreview) return;
     _supportRequestsSubscribed = true;
 
     supabase
@@ -1163,6 +1176,7 @@ class RunnerProfile extends ChangeNotifier {
   /// Marks a Runner's prayer/meeting request as seen by this Witness. Only the
   /// addressed Witness can do this, once (support_requests' RLS + guard).
   Future<void> acknowledgeSupportRequest(SupportRequest request) async {
+    _refuseInPreview();
     await supabase
         .from('support_requests')
         .update({'status': 'acknowledged'})
@@ -1185,7 +1199,7 @@ class RunnerProfile extends ChangeNotifier {
   /// shell's Retry plate is for.
   Future<void> loadCloudData() async {
     final targetChurchId = cloudAdminChurchId;
-    if (targetChurchId == null || _cloudDataLoaded) return;
+    if (targetChurchId == null || _cloudDataLoaded || isPreview) return;
 
     final issues = <String>[];
     String? firstDetail;
@@ -1314,6 +1328,7 @@ class RunnerProfile extends ChangeNotifier {
 
   /// Re-fetches just the triage list (the Insights screen's "Try Again").
   Future<void> refreshCloudTriage() async {
+    if (isPreview) return;
     final churchId = cloudAdminChurchId;
     if (churchId == null) return;
     await _loadCloudTriage(churchId);
@@ -1349,6 +1364,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> _persistRole(UserRole newRole) async {
+    if (isPreview) return;
     try {
       await supabase.rpc('set_my_role', params: {'p_role': newRole.dbValue});
     } catch (error) {
@@ -1365,6 +1381,7 @@ class RunnerProfile extends ChangeNotifier {
   /// displayable message if Auth refuses (invalid address, already in use,
   /// rate limited).
   Future<void> requestEmailChange(String value) async {
+    _refuseInPreview();
     await supabase.auth.updateUser(UserAttributes(email: value.trim()));
   }
 
@@ -1379,6 +1396,7 @@ class RunnerProfile extends ChangeNotifier {
     required String currentPassword,
     required String newPassword,
   }) async {
+    _refuseInPreview();
     await supabase.auth.signInWithPassword(email: email, password: currentPassword);
     await supabase.auth.updateUser(UserAttributes(password: newPassword));
   }
@@ -1387,6 +1405,7 @@ class RunnerProfile extends ChangeNotifier {
   /// answers — see [requestAccountabilityLockRemoval].) The screen changes only
   /// once the database has accepted it.
   Future<void> setAccountabilityLock(bool enabled) async {
+    _refuseInPreview();
     await supabase
         .from('profiles')
         .update({'accountability_lock_enabled': enabled})
@@ -1406,6 +1425,7 @@ class RunnerProfile extends ChangeNotifier {
   /// the database lets the Runner release it themselves (migration 019) —
   /// otherwise a lock set before pairing could never be removed.
   Future<bool> requestAccountabilityLockRemoval() async {
+    _refuseInPreview();
     if (witnesses.isEmpty) {
       await setAccountabilityLock(false);
       return true;
@@ -1425,6 +1445,7 @@ class RunnerProfile extends ChangeNotifier {
   /// migration 019): approving lifts the lock; declining clears the request
   /// and leaves the lock on. Only an active Witness of that Runner can call it.
   Future<void> resolveLockRemoval(String runnerId, {required bool approve}) async {
+    _refuseInPreview();
     await supabase.rpc(
       'resolve_accountability_lock_removal',
       params: {'p_runner_id': runnerId, 'p_approve': approve},
@@ -1434,6 +1455,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> toggleNotification(NotificationCategory category, bool value) async {
+    _refuseInPreview();
     notificationPreferences[category] = value;
     notifyListeners();
     final updated = {for (final entry in notificationPreferences.entries) entry.key.dbKey: entry.value};
@@ -1452,6 +1474,7 @@ class RunnerProfile extends ChangeNotifier {
   /// and the next [loadCurrent] picks that up. Marking it cancelled here
   /// would be wrong for the whole period still paid for.
   Future<MembershipCancellationOutcome> cancelMembership() async {
+    _refuseInPreview();
     final managementUrl = await PurchasesService.managementUrl();
     if (managementUrl == null) return MembershipCancellationOutcome.notStoreBilled;
 
@@ -1469,6 +1492,7 @@ class RunnerProfile extends ChangeNotifier {
   /// for a block of memberships out-of-band. See
   /// supabase/migrations/005_enterprise_church_codes.sql.
   Future<bool> redeemEnterpriseChurchCode(String code) async {
+    _refuseInPreview();
     final trimmed = code.trim();
     if (trimmed.isEmpty) return false;
 
@@ -1493,6 +1517,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> removeWitness(String witnessId, {required String reason}) async {
+    _refuseInPreview();
     await supabase
         .from('witness_pairings')
         .update({'status': 'removed'})
@@ -1503,6 +1528,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<String> generatePairingCode() async {
+    _refuseInPreview();
     final code = await supabase.rpc('generate_pairing_code') as String;
     pairingCode = code;
     notifyListeners();
@@ -1517,6 +1543,7 @@ class RunnerProfile extends ChangeNotifier {
     bool isAnchorRhythm = false,
     bool isThrowOff = false,
   }) async {
+    _refuseInPreview();
     final row = await supabase
         .from('rule_items')
         .insert({
@@ -1541,6 +1568,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> applyRuleOfLifeBaseline(List<BaselineRuleItem> items) async {
+    _refuseInPreview();
     final rows = await supabase
         .from('rule_items')
         .insert([
@@ -1553,6 +1581,8 @@ class RunnerProfile extends ChangeNotifier {
               'weekly_days': item.weeklyDays.toList(),
               'is_anchor_rhythm': item.isAnchorRhythm,
               'is_church_mandated': false,
+              // Only sent when true (see RuleItem.toInsertRow).
+              if (item.isThrowOff) 'is_throw_off': true,
             },
         ])
         .select();
@@ -1562,6 +1592,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> updateRuleItem(String id, void Function(RuleItem item) update) async {
+    _refuseInPreview();
     RuleItem? item;
     for (final candidate in ruleItems) {
       if (candidate.id == id) {
@@ -1606,6 +1637,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> removeRuleItem(String id) async {
+    _refuseInPreview();
     await supabase.from('rule_items').delete().eq('id', id);
     ruleItems.removeWhere((item) => item.id == id);
     notifyListeners();
@@ -1640,6 +1672,7 @@ class RunnerProfile extends ChangeNotifier {
   /// migration 023). Returns how many check-ins moved. Throws if the
   /// database refuses (not the Runner's rows, wrong kind of pair).
   Future<int> mergeRuleItemIntoDna({required String ownItemId, required String dnaItemId}) async {
+    _refuseInPreview();
     final moved = await supabase.rpc(
       'merge_rule_item_into_dna',
       params: {'p_own_item_id': ownItemId, 'p_dna_item_id': dnaItemId},
@@ -1655,6 +1688,7 @@ class RunnerProfile extends ChangeNotifier {
   /// can be edited or removed. The caller (rule_builder_screen.dart) picks
   /// which of this account's Witnesses to ask; this only persists the request.
   Future<void> requestRuleItemUnlock(String ruleItemId, String witnessId) async {
+    _refuseInPreview();
     final wasPending = pendingUnlockRuleItemIds.contains(ruleItemId);
     pendingUnlockRuleItemIds.add(ruleItemId);
     notifyListeners();
@@ -1681,6 +1715,7 @@ class RunnerProfile extends ChangeNotifier {
   /// only needs to keep the local watchedRunners mirror in sync so the
   /// Rule of Life tab reflects it without a reload.
   Future<void> respondToUnlockRequest(PendingUnlockRequest request, {required bool approve}) async {
+    _refuseInPreview();
     await supabase
         .from('pending_unlock_requests')
         .update({'status': approve ? 'approved' : 'denied'})
@@ -1712,6 +1747,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> setDailyCheckInReminder(TimeOfDay time) async {
+    _refuseInPreview();
     dailyCheckInReminder = time;
     notifyListeners();
     await supabase
@@ -1721,6 +1757,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<String> commitRuleOfLife() async {
+    _refuseInPreview();
     final code = await generatePairingCode();
     hasCommittedRule = true;
     // The database stamps the real time (and is what enforces the settle
@@ -1739,6 +1776,7 @@ class RunnerProfile extends ChangeNotifier {
   /// Saves this person's own mobile number. [number] must already be in
   /// international form (see normalizePhoneNumber in models/phone_number.dart).
   Future<void> setPhoneNumber(String number) async {
+    _refuseInPreview();
     await supabase.from('profiles').update({'phone_number': number}).eq('id', id);
     phoneNumber = number;
     notifyListeners();
@@ -1772,10 +1810,11 @@ class RunnerProfile extends ChangeNotifier {
 
   /// Persists the Tier 1 MHMDA collection consent already given on
   /// auth_onboarding_screen.dart's Create Account checkbox — called from
-  /// role_selection_screen.dart's `_beginJourney` right after the account
+  /// role_walkthrough_screen.dart's `_createAccount` right after the account
   /// is created, for every role (the checkbox itself already blocked
   /// getting this far without agreeing).
   Future<void> recordConsumerHealthDataConsent() async {
+    _refuseInPreview();
     consumerHealthDataConsent = true;
     notifyListeners();
     await supabase
@@ -1789,6 +1828,7 @@ class RunnerProfile extends ChangeNotifier {
   /// automatically via the check_ins_grace_nudge trigger — no client-side
   /// port of the old _fireGraceNudge/_consecutiveAnchorMisses logic needed.
   Future<void> recordCheckIn(DateTime date, Map<String, bool> responses) async {
+    _refuseInPreview();
     final entry = CheckInEntry(date: date, responses: responses);
     await supabase
         .from('check_ins')
@@ -1806,6 +1846,7 @@ class RunnerProfile extends ChangeNotifier {
     String? scripture,
     bool shareWithWitnesses = false,
   }) async {
+    _refuseInPreview();
     final row = await supabase
         .from('prayer_items')
         .insert({
@@ -1826,6 +1867,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> removePrayerItem(String id) async {
+    _refuseInPreview();
     // Looked up before the row goes: once the prayer is deleted, nothing else
     // remembers where its photo was stored.
     String? photoPath;
@@ -1841,6 +1883,7 @@ class RunnerProfile extends ChangeNotifier {
   /// Records where a prayer's photo is stored (see PrayerPhotoService, which
   /// does the uploading) — or, with null, that it no longer has one.
   Future<void> setPrayerPhoto(String id, String? photoPath) async {
+    _refuseInPreview();
     await supabase.from('prayer_items').update({'photo_path': photoPath}).eq('id', id);
     for (final item in prayerItems) {
       if (item.id == id) {
@@ -1864,6 +1907,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> setPrayerAnswered(String id, bool answered) async {
+    _refuseInPreview();
     final answeredDate = answered ? _dateOnly(DateTime.now()) : null;
     await supabase
         .from('prayer_items')
@@ -1880,6 +1924,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> markPrayedToday(String id) async {
+    _refuseInPreview();
     final today = _dateOnly(DateTime.now());
     await supabase.from('prayer_items').update({'last_prayed_date': today}).eq('id', id);
     for (final item in prayerItems) {
@@ -1892,6 +1937,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> setPrayerReminderTime(TimeOfDay time) async {
+    _refuseInPreview();
     prayerReminderTime = time;
     notifyListeners();
     await supabase
@@ -1905,6 +1951,7 @@ class RunnerProfile extends ChangeNotifier {
     String? homeAddress,
     String? workAddress,
   }) async {
+    _refuseInPreview();
     this.calendarConnected = calendarConnected;
     this.homeAddress = homeAddress;
     this.workAddress = workAddress;
@@ -1916,6 +1963,9 @@ class RunnerProfile extends ChangeNotifier {
       'work_address': workAddress,
       'has_completed_scheduling_setup': true,
     }).eq('id', id);
+    // The midway meeting-spot suggestion: this phone geocodes its own
+    // addresses (fail-soft, in the background).
+    unawaited(MeetingSpotService.instance.syncMyCoordinates(home: homeAddress, work: workAddress));
   }
 
   /// Whether at least one meeting place (home or work) is on file.
@@ -1926,6 +1976,7 @@ class RunnerProfile extends ChangeNotifier {
   /// first-run scheduling gate — which used to be the only place they could
   /// be entered, so skipping it meant never having them. Blank clears one.
   Future<void> updateMeetingPlaces({String? homeAddress, String? workAddress}) async {
+    _refuseInPreview();
     String? clean(String? value) {
       final trimmed = value?.trim() ?? '';
       return trimmed.isEmpty ? null : trimmed;
@@ -1947,6 +1998,11 @@ class RunnerProfile extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+    // The midway meeting-spot suggestion: this phone geocodes its own
+    // addresses (fail-soft, in the background).
+    unawaited(
+      MeetingSpotService.instance.syncMyCoordinates(home: this.homeAddress, work: this.workAddress),
+    );
   }
 
   Future<String> proposeMeeting({
@@ -1955,6 +2011,7 @@ class RunnerProfile extends ChangeNotifier {
     required String location,
     bool isEmergency = false,
   }) async {
+    _refuseInPreview();
     final row = await supabase
         .from('meetings')
         .insert({
@@ -1984,6 +2041,7 @@ class RunnerProfile extends ChangeNotifier {
     String meetingId, {
     required bool accept,
   }) async {
+    _refuseInPreview();
     final newStatus = accept ? MeetingStatus.confirmed : MeetingStatus.declined;
     final row = await supabase
         .from('meetings')
@@ -2012,6 +2070,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> rescheduleWatchedMeeting(String runnerId, String meetingId) async {
+    _refuseInPreview();
     await supabase.from('meetings').delete().eq('id', meetingId);
     _findWatchedRunner(runnerId)?.pendingMeetings.removeWhere((m) => m.id == meetingId);
     notifyListeners();
@@ -2028,6 +2087,7 @@ class RunnerProfile extends ChangeNotifier {
     required String activity,
     DateTime? time,
   }) async {
+    _refuseInPreview();
     final scheduledTime = time ?? DateTime.now().add(const Duration(days: 2));
     final row = await supabase
         .from('meetings')
@@ -2061,6 +2121,7 @@ class RunnerProfile extends ChangeNotifier {
     required String title,
     String details = '',
   }) async {
+    _refuseInPreview();
     final row = await supabase
         .from('witness_prayers')
         .insert({'witness_id': id, 'runner_id': runnerId, 'title': title, 'details': details})
@@ -2071,6 +2132,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> removeWitnessPrayer(String runnerId, String prayerId) async {
+    _refuseInPreview();
     await supabase.from('witness_prayers').delete().eq('id', prayerId);
     _findWatchedRunner(runnerId)?.witnessPrayers.removeWhere((item) => item.id == prayerId);
     notifyListeners();
@@ -2081,6 +2143,7 @@ class RunnerProfile extends ChangeNotifier {
   /// tries the private table first (it's this Witness's own row if it
   /// exists there at all), then falls back to the shared one.
   Future<void> setWatchedPrayerAnswered(String runnerId, String prayerId, bool answered) async {
+    _refuseInPreview();
     final answeredDate = answered ? _dateOnly(DateTime.now()) : null;
     final witnessRows = await supabase
         .from('witness_prayers')
@@ -2105,6 +2168,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> markWatchedPrayerPrayedToday(String runnerId, String prayerId) async {
+    _refuseInPreview();
     final today = _dateOnly(DateTime.now());
     final witnessRows = await supabase
         .from('witness_prayers')
@@ -2123,6 +2187,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<String> generateChurchCode() async {
+    _refuseInPreview();
     final targetChurchId = cloudAdminChurchId;
     if (targetChurchId == null) {
       throw StateError("Only a church's Cloud admin can generate a church code.");
@@ -2140,6 +2205,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> revokeChurchCode(String code) async {
+    _refuseInPreview();
     await supabase.from('church_codes').delete().eq('code', code);
     churchCodes.removeWhere((churchCode) => churchCode.code == code);
     notifyListeners();
@@ -2152,6 +2218,7 @@ class RunnerProfile extends ChangeNotifier {
   /// wasn't recognized (or was already used) — sign-up still proceeds
   /// either way, since the field is optional.
   Future<bool> redeemChurchCode(String code) async {
+    _refuseInPreview();
     final trimmed = code.trim();
     if (trimmed.isEmpty) return false;
 
@@ -2181,6 +2248,7 @@ class RunnerProfile extends ChangeNotifier {
   bool _dnaSeasonsSupported = false;
 
   Future<void> addDnaRhythm(DnaRhythm rhythm) async {
+    _refuseInPreview();
     final targetChurchId = cloudAdminChurchId;
     if (targetChurchId == null) return;
     final row = await supabase
@@ -2194,6 +2262,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> removeDnaRhythm(String title) async {
+    _refuseInPreview();
     final targetChurchId = cloudAdminChurchId;
     if (targetChurchId == null) return;
     await supabase
@@ -2213,6 +2282,7 @@ class RunnerProfile extends ChangeNotifier {
   /// read without an id). Returns how many members' copies were released,
   /// or null when that isn't known.
   Future<int?> retireDnaRhythm(DnaRhythm rhythm) async {
+    _refuseInPreview();
     final rhythmId = rhythm.id;
     if (rhythmId == null) {
       await removeDnaRhythm(rhythm.title);
@@ -2225,6 +2295,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> updateDnaRhythm(String oldTitle, DnaRhythm updated) async {
+    _refuseInPreview();
     final targetChurchId = cloudAdminChurchId;
     if (targetChurchId == null) return;
     // The database re-normalizes the days (a weekly rhythm always has at
@@ -2251,6 +2322,7 @@ class RunnerProfile extends ChangeNotifier {
   /// church is provisioned out-of-band when it purchases a Cloud
   /// membership, same as church creation itself.
   Future<String> generateCloudAccessCode() async {
+    _refuseInPreview();
     final targetChurchId = cloudAdminChurchId;
     if (targetChurchId == null) {
       throw StateError('You need Cloud access yourself before you can generate more codes.');
@@ -2262,6 +2334,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<bool> redeemCloudAccessCode(String code) async {
+    _refuseInPreview();
     final trimmed = code.trim();
     if (trimmed.isEmpty) return false;
 
@@ -2291,6 +2364,7 @@ class RunnerProfile extends ChangeNotifier {
   /// data-sharing consent callout *before* [redeemPairingCode] actually
   /// finalizes anything.
   Future<PairingCodePreview> checkPairingCode(String code) async {
+    _refuseInPreview();
     final trimmed = code.trim();
     if (trimmed.isEmpty) return const PairingCodePreview(isValid: false);
 
@@ -2310,6 +2384,7 @@ class RunnerProfile extends ChangeNotifier {
   /// itself too (see supabase/migrations/007_witness_church_consent.sql),
   /// rejecting the redemption rather than trusting the client's claim.
   Future<bool> redeemPairingCode(String code, {bool consent = false}) async {
+    _refuseInPreview();
     final trimmed = code.trim();
     if (trimmed.isEmpty) return false;
 
@@ -2325,6 +2400,7 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    _refuseInPreview();
     // Best-effort, and deliberately BEFORE auth.signOut() — once the
     // session is invalidated this account no longer has a JWT to update
     // its own row with. A failure here (e.g. offline) shouldn't block
@@ -2353,6 +2429,7 @@ class RunnerProfile extends ChangeNotifier {
   /// notify-then-delete ordering happens inside that function, not here, so
   /// it can't be skipped by killing the app mid-flow.
   Future<void> deleteAccount() async {
+    _refuseInPreview();
     final response = await supabase.functions.invoke('delete-account');
     if (response.status != 200) {
       throw Exception('Failed to delete account (HTTP ${response.status}).');
@@ -2369,4 +2446,105 @@ class RunnerProfile extends ChangeNotifier {
     PrayerPhotoService.instance.clear();
     unawaited(AnalyticsService.reset());
   }
+
+  // ---------------------------------------------------------------------
+  // Preview (sample data, offline)
+  // ---------------------------------------------------------------------
+
+  /// A fully populated profile that never touches the network: Sarah
+  /// Mitchell, Cloud admin of Grace Community Church (300 licenses, 220
+  /// Runners using The Trellis), who is also a Runner with a committed Rule
+  /// of Life and a Witness to two Runners. Shown by "See Preview" on the
+  /// Cloud Access Code dialog, so anyone can see what the Cloud does before
+  /// they have a code. See [PreviewSampleData] for every figure.
+  ///
+  /// Every lazy load is already marked done, nothing subscribes to Realtime,
+  /// and every method that would read or write Supabase either returns
+  /// quietly (loads) or throws [PreviewModeException] (writes). Never set as
+  /// [current].
+  factory RunnerProfile.preview() {
+    final now = DateTime.now();
+    final roster = PreviewSampleData.roster();
+    final ruleItems = PreviewSampleData.ruleItems(now);
+    final history = PreviewSampleData.checkInHistory(ruleItems, now);
+    final watched = PreviewSampleData.watchedRunners(now);
+
+    final profile = RunnerProfile._(
+      id: PreviewSampleData.userId,
+      name: PreviewSampleData.userName,
+      email: PreviewSampleData.userEmail,
+      role: UserRole.runner,
+      membershipStatus: MembershipStatus.active,
+      churchName: PreviewSampleData.churchName,
+      churchId: PreviewSampleData.churchId,
+      isChurchAffiliationLocked: true,
+      accountabilityLockEnabled: false,
+      notificationPreferences: {
+        for (final category in NotificationCategory.values) category: true,
+      },
+      witnesses: PreviewSampleData.witnesses(now),
+      ruleItems: ruleItems,
+      dailyCheckInReminder: const TimeOfDay(hour: 7, minute: 30),
+      hasCommittedRule: true,
+      ruleCommittedAt: PreviewSampleData.ruleCommittedAt(now),
+      phoneNumber: PreviewSampleData.userPhone,
+      consumerHealthDataConsent: true,
+      checkInHistory: history,
+      prayerReminderTime: const TimeOfDay(hour: 21, minute: 0),
+      prayerItems: PreviewSampleData.prayerItems(now),
+      hasCompletedSchedulingSetup: true,
+      calendarConnected: false,
+      homeAddress: '1200 Maple Avenue',
+      meetingRequests: PreviewSampleData.meetingRequests(now),
+      watchedRunners: watched,
+      churchRoster: roster,
+      cloudAdminChurchId: PreviewSampleData.churchId,
+      activeLicenseCount: PreviewSampleData.rosterSize,
+      licenseCap: PreviewSampleData.licenseCap,
+      churchCodes: PreviewSampleData.churchCodes(now),
+      dnaRhythms: PreviewSampleData.dnaRhythms(now),
+      churchRhythmMetrics: [...PreviewSampleData.metrics],
+      graceNudgeLog: [],
+      pendingUnlockRuleItemIds: {},
+      incomingUnlockRequests: [],
+      isPreview: true,
+    );
+
+    return profile
+      ..annualRenewalDate = PreviewSampleData.annualRenewalDate(now)
+      ..isCongregationalHealthLocked = false
+      ..trackedRunnerCount = PreviewSampleData.trackedRunnerCount(roster)
+      ..cloudTriage = PreviewSampleData.triage(roster)
+      ..cloudTriageUnavailable = false
+      ..analytics = PreviewSampleData.analytics(ruleItems, history, now)
+      ..analyticsLoaded = true
+      ..selectedRunnerId = watched.first.id
+      .._dnaSeasonsSupported = true
+      .._runnerDataLoaded = true
+      .._witnessDataLoaded = true
+      .._cloudDataLoaded = true;
+  }
+
+  /// True only for [RunnerProfile.preview]: sample data with no account
+  /// behind it. Screens check it to say "nothing here is saved" instead of
+  /// attempting a write.
+  final bool isPreview;
+
+  /// Writes on a preview profile go nowhere — and must never reach the real
+  /// signed-in session (many RPCs act on `auth.uid()`, not on [id]).
+  void _refuseInPreview() {
+    if (isPreview) throw const PreviewModeException();
+  }
+}
+
+/// Thrown by a [RunnerProfile] write attempted on a preview profile
+/// ([RunnerProfile.isPreview]). Screens normally check `isPreview` first and
+/// show a notice; this is the backstop.
+class PreviewModeException implements Exception {
+  const PreviewModeException();
+
+  static const message = 'This is a preview — nothing here is saved.';
+
+  @override
+  String toString() => 'PreviewModeException: $message';
 }

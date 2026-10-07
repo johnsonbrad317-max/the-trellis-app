@@ -35,7 +35,7 @@ enum UserRole {
 
   /// Used in small/inline contexts (e.g. the role-switcher sheet's compact
   /// list rows) where a full illustration would be out of place. The big
-  /// role cards use [cardArtAsset] instead — see OrnateRoleCard
+  /// role art uses [cardArtAsset] instead — see the welcome deck
   /// (lib/widgets/ornate_role_card.dart).
   BrassGlyphKind get glyph => switch (this) {
         UserRole.runner => BrassGlyphKind.person,

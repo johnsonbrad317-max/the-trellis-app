@@ -399,8 +399,10 @@ class RuleBuilderScreen extends StatelessWidget {
           "${_formatDay(DateTime.now().add(ruleSettlePeriod))}, you can change or remove any "
           "rhythm as you learn what's realistic. After that, your Witness helps hold them in "
           'place.\n\n'
-          "You're starting a 14-day free trial of The Trellis (\$12/yr after). "
-          'Cancel anytime from Settings — you will not be charged until your trial ends.',
+          // The pricing as the welcome deck states it: two free weeks from
+          // sign-up, no card; then a subscription or a code.
+          'Your first two weeks of The Trellis are free — no card needed. After that, keep '
+          'going for \$12 a year, or with a code from your church, organization or a friend.',
       bodyBuilder: (dialogContext, setDialogState) {
         final textTheme = Theme.of(dialogContext).textTheme;
         return Column(

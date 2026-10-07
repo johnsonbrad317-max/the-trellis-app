@@ -787,12 +787,11 @@ void main() {
     });
 
     test('sign-up no longer seeds starter rhythms, and asks for a phone number', () {
-      final selection = File('lib/screens/role_selection_screen.dart').readAsStringSync();
-      expect(selection.contains('_seedBaseline'), isFalse);
-      expect(selection.contains('applyRuleOfLifeBaseline'), isFalse);
-      expect(selection.contains("'phone': widget.phoneNumber"), isTrue);
-
+      // Account creation now happens on the sign-up form itself.
       final walkthrough = File('lib/screens/role_walkthrough_screen.dart').readAsStringSync();
+      expect(walkthrough.contains('_seedBaseline'), isFalse);
+      expect(walkthrough.contains('applyRuleOfLifeBaseline'), isFalse);
+      expect(walkthrough.contains("'phone': phone"), isTrue);
       expect(walkthrough.contains('normalizePhoneNumber'), isTrue);
       expect(walkthrough.contains("labelText: 'Mobile Number'"), isTrue);
     });

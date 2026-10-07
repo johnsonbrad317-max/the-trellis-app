@@ -258,18 +258,27 @@ class CalendarService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// A fixed answer for [availabilityWith] — for rendering the welcome
+  /// deck's screenshots and for tests; null in the app.
+  @visibleForTesting
+  PairAvailability? debugAvailability;
+
   /// Times in [from]..[to] when both I and [otherUserId] are free for
   /// [durationMinutes]. My side is read from this phone's calendars right now;
   /// the other side is what their phone uploaded. Returns null if the lookup
   /// failed (offline, server not ready, not paired…); callers then fall back
   /// to manual entry. When either side isn't sharing the result has no
-  /// suggestions and says who is missing.
+  /// suggestions and says who is missing. When both are, it also carries both
+  /// busy lists ([PairAvailability.myBusy] / [PairAvailability.otherBusy]) so
+  /// the proposal sheet can check its own fixed coffee / lunch times.
   Future<PairAvailability?> availabilityWith(
     String otherUserId, {
     required DateTime from,
     required DateTime to,
     int durationMinutes = 60,
   }) async {
+    final fixed = debugAvailability;
+    if (fixed != null) return fixed;
     try {
       final response = await supabase.rpc('get_pair_calendar', params: {
         'p_other_user_id': otherUserId,
@@ -313,6 +322,8 @@ class CalendarService extends ChangeNotifier with WidgetsBindingObserver {
         otherSharing: true,
         meSyncedAt: meSyncedAt,
         otherSyncedAt: otherSyncedAt,
+        myBusy: mergeBusyBlocks(mine),
+        otherBusy: mergeBusyBlocks(theirs),
       );
     } catch (error) {
       debugPrint('CalendarService.availabilityWith failed: ${error.runtimeType}');

@@ -68,6 +68,9 @@ flutter:
 
   assets:
     - assets/images/
+    # Screens shown in the welcome deck (regenerate with
+    # test/render_welcome_screens_test.dart when they change).
+    - assets/images/welcome/
     - assets/fonts/OFL.txt
 
   # EB Garamond, bundled (SIL Open Font License, assets/fonts/OFL.txt) so type

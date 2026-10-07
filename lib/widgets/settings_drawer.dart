@@ -108,6 +108,9 @@ class SettingsDrawer extends StatelessWidget {
           'Once a week: how many rhythms each Runner you walk with kept.',
         NotificationCategory.anchorRhythmAlerts => null,
         NotificationCategory.meetingRequests => null,
+        NotificationCategory.quietRunnerAlerts =>
+          "When a Runner you walk with goes quiet, hasn't started their Rule of Life, "
+              'or may have removed the app.',
       };
 
   Future<void> _editNotificationSettings(BuildContext context) async {

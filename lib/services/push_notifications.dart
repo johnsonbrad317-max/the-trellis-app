@@ -100,7 +100,15 @@ class PushNotifications {
 /// Runs in a separate background isolate when a push arrives while the app
 /// isn't in the foreground — Firebase needs its own [Firebase.initializeApp]
 /// call here since isolate state isn't shared with the main one.
+///
+/// A `presence_probe` (push-notification-engine's daily "is this app still
+/// installed?" check) is data-only and silent: there is nothing to show and
+/// nothing to do — the server learns what it needs from whether FCM accepted
+/// the message. It returns at once. (Data-only messages never display a
+/// notification by themselves, and there is no foreground onMessage handler,
+/// so a probe that arrives while the app is open is ignored too.)
 @pragma('vm:entry-point')
 Future<void> _backgroundMessageHandler(RemoteMessage message) async {
+  if (message.data['type'] == 'presence_probe') return;
   await Firebase.initializeApp();
 }

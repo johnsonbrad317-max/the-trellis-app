@@ -6,6 +6,7 @@ import '../../models/runner_profile.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_app_bar.dart';
 import '../../widgets/bookplate_dialog.dart';
+import '../../widgets/cloud_preview.dart';
 import '../../widgets/dna_rhythm_dialog.dart';
 import '../../widgets/trellis_scaffold.dart';
 
@@ -36,6 +37,7 @@ class ChurchProfileScreen extends StatelessWidget {
   /// each member's becomes their own rhythm, open for a week to keep or let
   /// go (see RunnerProfile.retireDnaRhythm).
   Future<void> _confirmRetire(BuildContext context, DnaRhythm rhythm) async {
+    if (refuseInPreview(context, profile)) return;
     final confirmed = await showBookplateConfirm(
       context,
       title: 'Retire DNA Rhythm?',
@@ -120,8 +122,9 @@ class ChurchProfileScreen extends StatelessWidget {
                             label: 'Edit',
                             compact: true,
                             variant: BookplateButtonVariant.secondary,
-                            onPressed: () =>
-                                showDnaRhythmDialog(context, profile, existing: rhythm),
+                            onPressed: () => refuseInPreview(context, profile)
+                                ? null
+                                : showDnaRhythmDialog(context, profile, existing: rhythm),
                           ),
                           BookplateButton(
                             label: 'Retire',
@@ -140,7 +143,8 @@ class ChurchProfileScreen extends StatelessWidget {
             BookplateButton(
               label: 'Add DNA Rhythm',
               variant: BookplateButtonVariant.secondary,
-              onPressed: () => showDnaRhythmDialog(context, profile),
+              onPressed: () =>
+                  refuseInPreview(context, profile) ? null : showDnaRhythmDialog(context, profile),
             ),
           ],
         ),

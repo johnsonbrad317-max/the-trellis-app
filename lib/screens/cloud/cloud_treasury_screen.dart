@@ -8,6 +8,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_dialog.dart';
 import '../../widgets/bookplate_plate.dart';
 import '../../widgets/brass_glyph.dart';
+import '../../widgets/cloud_preview.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/launch_link.dart';
 
@@ -35,7 +36,7 @@ class _CloudTreasuryScreenState extends State<CloudTreasuryScreen> {
   /// second tap can't mint a second (each one is a real licence invite) — and
   /// says so if it couldn't.
   Future<void> _generateCode() async {
-    if (_isGenerating) return;
+    if (_isGenerating || refuseInPreview(context, _profile)) return;
     setState(() => _isGenerating = true);
     try {
       final code = await _profile.generateChurchCode();
@@ -68,7 +69,7 @@ class _CloudTreasuryScreenState extends State<CloudTreasuryScreen> {
   /// Revoking deletes the code for good — anyone it was already given to can
   /// no longer use it — so it asks first.
   Future<void> _revokeCode(String code) async {
-    if (_revoking.contains(code)) return;
+    if (_revoking.contains(code) || refuseInPreview(context, _profile)) return;
     final confirmed = await showBookplateConfirm(
       context,
       title: 'Revoke This Code?',

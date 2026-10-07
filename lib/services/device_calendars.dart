@@ -57,13 +57,38 @@ class DeviceCalendars {
     }
   }
 
-  /// The names of the calendars on this phone, for showing the person what
-  /// is being read ("Home", "Work", "Family"). Empty without permission.
+  /// The calendars on this phone, for showing the person what is being read,
+  /// each with the account it belongs to — "Calendar · Exchange",
+  /// "Home · iCloud" — grouped by account. That is how someone can tell at a
+  /// glance whether their Outlook or Google calendar is among them (it is
+  /// only when that account has been added to the phone itself). Empty
+  /// without permission.
   Future<List<String>> calendarNames() async {
     final calendars = await _calendars();
+    return calendarLabels([
+      for (final calendar in calendars) (calendar.name, calendar.accountName),
+    ]);
+  }
+
+  /// Pure, for tests: "Name · Account" labels sorted by account then name,
+  /// dropping blanks and duplicates; the account is left off when unknown or
+  /// identical to the name.
+  @visibleForTesting
+  static List<String> calendarLabels(Iterable<(String?, String?)> calendars) {
+    final entries = <(String, String)>{};
+    for (final (name, account) in calendars) {
+      final n = name?.trim() ?? '';
+      if (n.isEmpty) continue;
+      entries.add((n, account?.trim() ?? ''));
+    }
+    final sorted = entries.toList()
+      ..sort((a, b) {
+        final byAccount = a.$2.toLowerCase().compareTo(b.$2.toLowerCase());
+        return byAccount != 0 ? byAccount : a.$1.toLowerCase().compareTo(b.$1.toLowerCase());
+      });
     return [
-      for (final calendar in calendars)
-        if (calendar.name != null && calendar.name!.trim().isNotEmpty) calendar.name!.trim(),
+      for (final (name, account) in sorted)
+        account.isEmpty || account.toLowerCase() == name.toLowerCase() ? name : '$name · $account',
     ];
   }
 

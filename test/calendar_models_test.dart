@@ -1,4 +1,5 @@
 import 'package:device_calendar/device_calendar.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -6,6 +7,7 @@ import 'package:trellis/models/calendar_connection.dart';
 import 'package:trellis/models/shared_free_windows.dart';
 import 'package:trellis/services/calendar_service.dart';
 import 'package:trellis/services/device_calendars.dart';
+import 'package:trellis/widgets/calendar_connect_sheet.dart';
 
 /// Calendar sharing, the on-device way: the models the screens read, what the
 /// phone's events are reduced to before upload, and how the other person's
@@ -89,6 +91,29 @@ void main() {
       expect(CalendarService.parseBusyBlocks(null), isEmpty);
       expect(CalendarService.parseBusyBlocks('[]'), isEmpty);
     });
+  });
+
+  group('DeviceCalendars.calendarLabels', () {
+    test('names each calendar with its account, grouped by account', () {
+      expect(
+        DeviceCalendars.calendarLabels([
+          ('Work', 'iCloud'),
+          ('Calendar', 'Exchange'),
+          ('Home', 'iCloud'),
+          ('  ', 'iCloud'),
+          ('Home', 'iCloud'),
+          ('Birthdays', null),
+          ('Gmail', 'Gmail'),
+        ]),
+        ['Birthdays', 'Calendar · Exchange', 'Gmail', 'Home · iCloud', 'Work · iCloud'],
+      );
+    });
+  });
+
+  test('the account help says how to add an Outlook calendar on each platform', () {
+    expect(calendarAccountHelp(TargetPlatform.iOS), contains('Microsoft Exchange'));
+    expect(calendarAccountHelp(TargetPlatform.iOS), contains('Calendar Accounts'));
+    expect(calendarAccountHelp(TargetPlatform.android), contains('Sync calendars'));
   });
 
   group('DeviceCalendars.busyBlocksFrom', () {

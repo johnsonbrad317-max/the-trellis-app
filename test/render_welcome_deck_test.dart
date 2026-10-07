@@ -47,7 +47,7 @@ void main() {
                 height: 640,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: WelcomeSlideView(welcomeSlides[i]),
+                  child: WelcomeSlideView(welcomeSlides[i], onRoleChosen: (_) {}),
                 ),
               ),
             ),
@@ -55,6 +55,8 @@ void main() {
         ),
       ));
       // Let the images decode and any reveal animation finish.
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 900)));
+      await tester.pump();
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 600)));
       await tester.pumpAndSettle(const Duration(milliseconds: 100));
       final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;

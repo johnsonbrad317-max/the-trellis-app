@@ -19,6 +19,24 @@
 //                       trigger — nothing is inserted for this one) right
 //                       before it deletes the Runner's account, so their
 //                       Witness finds out immediately.
+//   - witness_nudge     a Runner hasn't started a Rule of Life, has gone
+//                       quiet, or may have removed the app (witness_nudges
+//                       insert — 026; rows written daily by
+//                       generate_witness_nudges() and by the presence probe
+//                       below). Copy lives in witness_nudges.ts.
+//
+// And one scheduled action that is not a notification at all:
+//   - presence_probe    POST { "action": "presence_probe" } (pg_cron job
+//                       trellis-presence-probe, daily, via
+//                       request_presence_probe() — 026). Sends a silent,
+//                       data-only push to each Runner who hasn't opened the
+//                       app for two days; a token FCM reports as gone marks
+//                       the Runner app-removed and nudges their Witnesses.
+//                       See witness_nudges.ts for how slow that can be.
+//
+// A token FCM reports as gone during ANY send (not only the probe) is handled
+// the same way, through record_app_removed() (026): the token is cleared, the
+// profile is marked app-removed, and a Runner's Witnesses are nudged.
 //
 // Each trigger POSTs a small, uniform envelope:
 //   { event_type: '...', table: '...', record: { ...the new row... } }
@@ -86,6 +104,16 @@ import {
   readJsonObject,
   secretsMatch,
 } from '../_shared/http.ts';
+import {
+  classifyFcmError,
+  isWitnessNudgeKind,
+  PRESENCE_PROBE_LIMIT,
+  presenceProbeMessage,
+  QUIET_RUNNER_ALERTS_PREFERENCE,
+  runPresenceProbe,
+  witnessNudgeCopy,
+  type ProbeCandidate,
+} from './witness_nudges.ts';
 
 const NO_CORS = { cors: false } as const;
 
@@ -96,6 +124,7 @@ const EVENT_TYPES = [
   'account_deleted',
   'support_request',
   'weekly_roll_up',
+  'witness_nudge',
 ] as const;
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -163,6 +192,9 @@ function validateRecord(eventType: EventType, record: Record<string, unknown>): 
       if (!isCount(kept) || kept > scheduled) return 'rhythms_kept';
       return null;
     }
+    case 'witness_nudge':
+      if (!isWitnessNudgeKind(record.kind)) return 'kind';
+      return need('id', 'runner_id', 'witness_id');
   }
 }
 
@@ -367,6 +399,31 @@ function resolveAccountDeleted(
   }]);
 }
 
+/// A Runner hasn't started a Rule of Life, has gone quiet, or may have removed
+/// the app (witness_nudges insert — one row, hence one notification, per
+/// Runner/Witness pair and episode). First name only, never a rhythm's title.
+/// Honors the Witness's "Check-In Alerts" preference (quiet_runner_alerts).
+async function resolveWitnessNudge(
+  supabase: SupabaseClient,
+  record: Record<string, unknown>,
+): Promise<NotificationJob[]> {
+  const runnerId = record.runner_id as string;
+  const witnessId = record.witness_id as string;
+  // validateRecord has already checked it is one of the three kinds.
+  const kind = isWitnessNudgeKind(record.kind) ? record.kind : 'quiet';
+
+  const runnerName = await profileName(supabase, runnerId);
+  const { title, body } = witnessNudgeCopy(kind, runnerName, record.detail);
+
+  return [{
+    profileId: witnessId,
+    title,
+    body,
+    data: { type: 'witness_nudge', kind, runnerId },
+    preference: QUIET_RUNNER_ALERTS_PREFERENCE,
+  }];
+}
+
 const RESOLVERS: Record<
   EventType,
   (supabase: SupabaseClient, record: Record<string, unknown>) => Promise<NotificationJob[]>
@@ -377,6 +434,7 @@ const RESOLVERS: Record<
   account_deleted: resolveAccountDeleted,
   support_request: resolveSupportRequest,
   weekly_roll_up: resolveWeeklyRollUp,
+  witness_nudge: resolveWitnessNudge,
 };
 
 // ---------------------------------------------------------------------------
@@ -483,21 +541,25 @@ async function getFcmAccessToken(serviceAccount: FcmServiceAccount): Promise<str
   return accessToken;
 }
 
-interface SendResult {
-  profileId: string;
+interface FcmPostResult {
   ok: boolean;
+  /// FCM says this device token is gone for good (see classifyFcmError).
+  tokenGone: boolean;
   /// Log-safe reason: "timeout", "network", or "HTTP <status> <FCM status>".
   reason?: string;
 }
 
-/// Sends one push. Never throws: a timeout or network failure is reported as
-/// a failed result for this recipient only.
-async function sendFcmMessage(
+interface SendResult extends FcmPostResult {
+  profileId: string;
+}
+
+/// POSTs one FCM v1 `message`. Never throws: a timeout or network failure is
+/// reported as a failed result for this one message only.
+async function postFcmMessage(
   projectId: string,
   accessToken: string,
-  deviceToken: string,
-  job: NotificationJob,
-): Promise<SendResult> {
+  message: Record<string, unknown>,
+): Promise<FcmPostResult> {
   try {
     const response = await fetchWithTimeout(
       `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`,
@@ -507,13 +569,7 @@ async function sendFcmMessage(
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: {
-            token: deviceToken,
-            notification: { title: job.title, body: job.body },
-            data: job.data,
-          },
-        }),
+        body: JSON.stringify({ message }),
       },
       FCM_TIMEOUT_MS,
       'FCM send',
@@ -521,28 +577,174 @@ async function sendFcmMessage(
 
     if (response.ok) {
       await discardBody(response);
-      return { profileId: job.profileId, ok: true };
+      return { ok: true, tokenGone: false };
     }
 
-    // Keep only FCM's short status word (e.g. NOT_FOUND, UNAUTHENTICATED) —
-    // never the body, which can describe the device token.
-    let fcmStatus = '';
+    // Keep only FCM's short status word (e.g. NOT_FOUND, UNAUTHENTICATED) and
+    // whether the token is gone — never the body, which can describe the
+    // device token.
+    let parsed: unknown = null;
     try {
-      const parsed = await readJsonBody(response, 'FCM send');
-      const error = isPlainObject(parsed) && isPlainObject(parsed.error) ? parsed.error : null;
-      if (error && typeof error.status === 'string') fcmStatus = error.status.slice(0, 40);
+      parsed = await readJsonBody(response, 'FCM send');
     } catch (_) {
       // Unreadable error body: the HTTP status alone will do.
     }
+    const { fcmStatus, tokenGone } = classifyFcmError(response.status, parsed);
     if (response.status === 401) cachedToken = null;
-    return { profileId: job.profileId, ok: false, reason: `HTTP ${response.status} ${fcmStatus}`.trim() };
+    return { ok: false, tokenGone, reason: `HTTP ${response.status} ${fcmStatus}`.trim() };
   } catch (error) {
     return {
-      profileId: job.profileId,
       ok: false,
+      tokenGone: false,
       reason: error instanceof FetchTimeoutError ? 'timeout' : 'network',
     };
   }
+}
+
+/// Sends one visible push for a notification job. Never throws.
+async function sendFcmMessage(
+  projectId: string,
+  accessToken: string,
+  deviceToken: string,
+  job: NotificationJob,
+): Promise<SendResult> {
+  const result = await postFcmMessage(projectId, accessToken, {
+    token: deviceToken,
+    notification: { title: job.title, body: job.body },
+    data: job.data,
+  });
+  return { profileId: job.profileId, ...result };
+}
+
+/// FCM said `token` is gone: clear it from the profile, mark the profile
+/// app-removed and, for a Runner, nudge each active Witness (one
+/// witness_nudges row each, which comes back through this function as a
+/// witness_nudge event). Does nothing if the profile has registered a
+/// different token since. Returns how many nudges were written; throws on a
+/// database error.
+async function recordAppRemoved(supabase: SupabaseClient, profileId: string, token: string): Promise<number> {
+  const { data, error } = await supabase.rpc('record_app_removed', {
+    p_profile_id: profileId,
+    p_token: token,
+  });
+  if (error) throw new Error(describeError(error));
+  return typeof data === 'number' ? data : 0;
+}
+
+/// Best-effort version for ordinary sends: a failure is logged, never thrown.
+async function recordGoneTokens(
+  supabase: SupabaseClient,
+  results: SendResult[],
+  tokenByProfile: Map<string, string | null>,
+): Promise<void> {
+  for (const result of results) {
+    if (result.ok || !result.tokenGone) continue;
+    const token = tokenByProfile.get(result.profileId);
+    if (typeof token !== 'string' || token.length === 0) continue;
+    try {
+      await recordAppRemoved(supabase, result.profileId, token);
+    } catch (error) {
+      console.error('push-notification-engine: recording a removed app failed:', describeError(error));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared set-up
+// ---------------------------------------------------------------------------
+
+/// The service-role client (bypasses RLS — needed to read across whichever
+/// Runner's and Witness's own rows a given event touches), or null when the
+/// platform did not inject its URL and key.
+function createServiceClient(): SupabaseClient | null {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('push-notification-engine: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing');
+    return null;
+  }
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { fetch: fetchWithDeadline(DB_TIMEOUT_MS) },
+  });
+}
+
+/// FCM's project id and a fresh access token — or the JSON answer to give
+/// instead (200 fcm_not_configured when the secrets are simply not set yet;
+/// an error when they are set but unusable).
+async function prepareFcm(): Promise<{ projectId: string; accessToken: string } | Response> {
+  const projectId = Deno.env.get('FCM_PROJECT_ID');
+  const serviceAccountJson = Deno.env.get('FCM_SERVICE_ACCOUNT_JSON');
+  if (!projectId || !serviceAccountJson) {
+    console.log('push-notification-engine: FCM secrets not configured; skipping push delivery.');
+    return jsonResponse(200, { sent: 0, reason: 'fcm_not_configured' }, NO_CORS);
+  }
+
+  const serviceAccount = parseServiceAccount(serviceAccountJson);
+  if (!serviceAccount) {
+    console.error('push-notification-engine: FCM_SERVICE_ACCOUNT_JSON is not a valid service-account key file.');
+    return errorResponse(500, 'fcm_misconfigured', 'Push delivery is misconfigured.', NO_CORS);
+  }
+
+  try {
+    return { projectId, accessToken: await getFcmAccessToken(serviceAccount) };
+  } catch (error) {
+    console.error('push-notification-engine: FCM auth failed:', describeError(error));
+    return errorResponse(502, 'fcm_auth_failed', 'Could not authenticate with the push service.', NO_CORS);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The presence probe (daily; see witness_nudges.ts)
+// ---------------------------------------------------------------------------
+
+/// Probes every Runner the app hasn't heard from in two days (at most
+/// PRESENCE_PROBE_LIMIT a run — presence_probe_candidates() in 026 picks them:
+/// an active pairing, a device token, not already marked app-removed, and
+/// last_seen_at — or, never seen, the account's creation — over two days
+/// ago). Answers 200 { probed, delivered, tokensGone, failed, marked, nudges,
+/// markFailed, distrusted } or a JSON error.
+async function handlePresenceProbe(): Promise<Response> {
+  const supabase = createServiceClient();
+  if (!supabase) {
+    return errorResponse(500, 'not_configured', 'Push delivery is not configured.', NO_CORS);
+  }
+
+  let candidates: ProbeCandidate[];
+  try {
+    const { data, error } = await supabase.rpc('presence_probe_candidates', { p_limit: PRESENCE_PROBE_LIMIT });
+    if (error) throw new Error(describeError(error));
+    candidates = ((data ?? []) as Array<{ profile_id: unknown; fcm_token: unknown }>)
+      .filter((row) => isUuid(row.profile_id) && typeof row.fcm_token === 'string' && row.fcm_token.length > 0)
+      .slice(0, PRESENCE_PROBE_LIMIT)
+      .map((row) => ({ profileId: row.profile_id as string, token: row.fcm_token as string }));
+  } catch (error) {
+    console.error('push-notification-engine: presence probe candidate lookup failed:', describeError(error));
+    return errorResponse(502, 'db_unavailable', 'Could not look up who to probe.', NO_CORS);
+  }
+  if (candidates.length === 0) {
+    return jsonResponse(200, { probed: 0, reason: 'no_candidates' }, NO_CORS);
+  }
+
+  const fcm = await prepareFcm();
+  if (fcm instanceof Response) return fcm;
+
+  const summary = await runPresenceProbe(candidates, {
+    send: (candidate) => postFcmMessage(fcm.projectId, fcm.accessToken, presenceProbeMessage(candidate.token)),
+    markRemoved: (candidate) => recordAppRemoved(supabase, candidate.profileId, candidate.token),
+  });
+
+  if (summary.distrusted) {
+    console.error(
+      `push-notification-engine: presence probe — ${summary.tokensGone} of ${summary.probed} tokens reported ` +
+        'gone; that many at once points at a configuration problem, not uninstalls. Nobody was marked.',
+    );
+  }
+  if (summary.markFailed > 0) {
+    console.error(`push-notification-engine: presence probe — ${summary.markFailed} app-removed record(s) failed.`);
+  }
+  console.log('push-notification-engine: presence probe:', JSON.stringify(summary));
+  return jsonResponse(200, summary, NO_CORS);
 }
 
 // ---------------------------------------------------------------------------
@@ -567,6 +769,9 @@ async function handle(req: Request): Promise<Response> {
   if (!parsed.ok) return parsed.response;
   const payload = parsed.body;
 
+  // The daily presence probe is an action, not an event (no record).
+  if (payload.action === 'presence_probe') return await handlePresenceProbe();
+
   const eventType = payload.event_type;
   if (!isEventType(eventType)) {
     return errorResponse(400, 'unknown_event', 'Unknown event_type.', NO_CORS);
@@ -580,19 +785,10 @@ async function handle(req: Request): Promise<Response> {
     return errorResponse(400, 'invalid_payload', `record.${badField} is missing or malformed.`, NO_CORS);
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceRoleKey) {
-    console.error('push-notification-engine: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing');
+  const supabase = createServiceClient();
+  if (!supabase) {
     return errorResponse(500, 'not_configured', 'Push delivery is not configured.', NO_CORS);
   }
-
-  // service-role client: bypasses RLS, needed to read across whichever
-  // Runner's and Witness's own rows a given event touches.
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    global: { fetch: fetchWithDeadline(DB_TIMEOUT_MS) },
-  });
 
   // 3. Resolve who gets told what.
   let jobs: NotificationJob[];
@@ -648,27 +844,10 @@ async function handle(req: Request): Promise<Response> {
     return jsonResponse(200, { sent: 0, reason: 'no_tokens_or_muted' }, NO_CORS);
   }
 
-  const fcmProjectId = Deno.env.get('FCM_PROJECT_ID');
-  const fcmServiceAccountJson = Deno.env.get('FCM_SERVICE_ACCOUNT_JSON');
-  if (!fcmProjectId || !fcmServiceAccountJson) {
-    console.log('push-notification-engine: FCM secrets not configured; skipping push delivery.');
-    return jsonResponse(200, { sent: 0, reason: 'fcm_not_configured' }, NO_CORS);
-  }
-
-  const serviceAccount = parseServiceAccount(fcmServiceAccountJson);
-  if (!serviceAccount) {
-    console.error('push-notification-engine: FCM_SERVICE_ACCOUNT_JSON is not a valid service-account key file.');
-    return errorResponse(500, 'fcm_misconfigured', 'Push delivery is misconfigured.', NO_CORS);
-  }
-
   // 4. Deliver. A bad key or an FCM outage is a clean JSON answer, never a throw.
-  let accessToken: string;
-  try {
-    accessToken = await getFcmAccessToken(serviceAccount);
-  } catch (error) {
-    console.error('push-notification-engine: FCM auth failed:', describeError(error));
-    return errorResponse(502, 'fcm_auth_failed', 'Could not authenticate with the push service.', NO_CORS);
-  }
+  const fcm = await prepareFcm();
+  if (fcm instanceof Response) return fcm;
+  const { projectId: fcmProjectId, accessToken } = fcm;
 
   // sendFcmMessage never rejects, so one bad recipient cannot stop the rest.
   const results = await Promise.all(
@@ -684,6 +863,9 @@ async function handle(req: Request): Promise<Response> {
       JSON.stringify(failures.map(({ profileId, reason }) => ({ profileId, reason }))),
     );
   }
+  // A token FCM calls gone (app removed) is cleared, and a Runner's Witnesses
+  // are told — the same path the presence probe uses.
+  await recordGoneTokens(supabase, results, tokenByProfile);
   const sent = results.length - failures.length;
   if (sent === 0) {
     return jsonResponse(

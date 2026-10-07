@@ -9,6 +9,7 @@ import '../../widgets/bookplate_plate.dart';
 import '../../widgets/brass_glyph.dart';
 import '../../widgets/brass_lock.dart';
 import '../../widgets/cloud_empty_state.dart';
+import '../../widgets/cloud_preview.dart';
 import '../../widgets/dna_rhythm_dialog.dart';
 import '../../widgets/email_chooser_sheet.dart';
 import '../../widgets/launch_link.dart';
@@ -97,7 +98,9 @@ class CloudInsightsScreen extends StatelessWidget {
                     label: 'Add DNA Rhythm',
                     compact: true,
                     variant: BookplateButtonVariant.secondary,
-                    onPressed: () => showDnaRhythmDialog(context, profile),
+                    onPressed: () => refuseInPreview(context, profile)
+                        ? null
+                        : showDnaRhythmDialog(context, profile),
                   ),
                 ),
                 const BookplateDivider(height: 32),
@@ -341,6 +344,7 @@ class _NeedsAttention extends StatelessWidget {
       children: [
         if (triage.struggling.isNotEmpty) ...[
           _TriageCard(
+            preview: profile.isPreview,
             accentColor: AppColors.terracotta,
             heading: _count(triage.struggling.length, 'Runner is struggling', 'Runners are struggling'),
             blurb: 'Under $strugglingPct% of their scheduled days this season (a day with no '
@@ -364,6 +368,7 @@ class _NeedsAttention extends StatelessWidget {
         ],
         if (triage.witnessAlerts.isNotEmpty) ...[
           _TriageCard(
+            preview: profile.isPreview,
             accentColor: AppColors.antiqueBrass,
             heading: _count(
               triage.witnessAlerts.length,
@@ -391,6 +396,7 @@ class _NeedsAttention extends StatelessWidget {
         ],
         if (triage.isolated.isNotEmpty) ...[
           _TriageCard(
+            preview: profile.isPreview,
             accentColor: AppColors.antiqueBrass,
             heading: _count(
               triage.isolated.length,
@@ -416,6 +422,7 @@ class _NeedsAttention extends StatelessWidget {
         ],
         if (triage.dormant.isNotEmpty)
           _TriageCard(
+            preview: profile.isPreview,
             accentColor: AppColors.forestGreen,
             heading: _count(
               triage.dormant.length,
@@ -469,12 +476,17 @@ class _TriageCard extends StatefulWidget {
     required this.heading,
     required this.blurb,
     required this.rows,
+    required this.preview,
   });
 
   final Color accentColor;
   final String heading;
   final String blurb;
   final List<_TriageRowData> rows;
+
+  /// Sample data (the Cloud preview): Text and Email say so instead of
+  /// reaching out to anyone.
+  final bool preview;
 
   @override
   State<_TriageCard> createState() => _TriageCardState();
@@ -483,8 +495,16 @@ class _TriageCard extends StatefulWidget {
 class _TriageCardState extends State<_TriageCard> {
   bool _showAll = false;
 
-  Future<void> _contact(Uri uri, String unavailableNotice) =>
-      launchOrNotify(context, uri, unavailable: unavailableNotice);
+  Future<void> _contact(Uri uri, String unavailableNotice) async {
+    if (_refusedInPreview()) return;
+    await launchOrNotify(context, uri, unavailable: unavailableNotice);
+  }
+
+  bool _refusedInPreview() {
+    if (!widget.preview) return false;
+    showBookplateNotice(context, PreviewModeException.message);
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -555,12 +575,14 @@ class _TriageCardState extends State<_TriageCard> {
                                   label: 'Email',
                                   compact: true,
                                   variant: BookplateButtonVariant.secondary,
-                                  onPressed: () => showEmailChooser(
-                                    context,
-                                    email: row.email!,
-                                    subject: 'Thinking of you',
-                                    body: row.message,
-                                  ),
+                                  onPressed: () => _refusedInPreview()
+                                      ? null
+                                      : showEmailChooser(
+                                          context,
+                                          email: row.email!,
+                                          subject: 'Thinking of you',
+                                          body: row.message,
+                                        ),
                                 ),
                               ],
                             ],

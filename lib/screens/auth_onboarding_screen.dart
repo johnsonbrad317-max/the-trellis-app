@@ -56,17 +56,15 @@ class _AuthOnboardingScreenState extends State<AuthOnboardingScreen> {
       await supabase.auth.signInWithPassword(email: email, password: password);
       final profile = await RunnerProfile.loadCurrent();
       if (!mounted) return;
-      final navigator = Navigator.of(context);
-      navigator.pushReplacement(
-        MaterialPageRoute(builder: (context) => shellForProfile(profile)),
+      // First sign-in on this account: the welcome deck, whose last slide
+      // chooses how to start; otherwise straight into the app.
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => profile.hasSeenWelcome
+              ? shellForProfile(profile)
+              : WelcomeWalkthroughScreen(profile: profile),
+        ),
       );
-      // First sign-in on this account: the "how The Trellis works" deck sits
-      // over the shell (which loads underneath) until Begin or Skip.
-      if (!profile.hasSeenWelcome) {
-        navigator.push(
-          MaterialPageRoute(builder: (context) => WelcomeWalkthroughScreen(profile: profile)),
-        );
-      }
     } on AuthException catch (error) {
       if (mounted) setState(() => _errorMessage = error.message);
     } catch (_) {

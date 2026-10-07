@@ -1,10 +1,12 @@
 import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/meeting_activity.dart';
 import '../../models/meeting_proposal_engine.dart';
 import '../../models/runner_profile.dart';
 import '../../models/watched_runner.dart';
 import '../../services/calendar_service.dart';
+import '../../services/meeting_spot_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_chip.dart';
 import '../../widgets/bookplate_date_picker.dart';
@@ -15,6 +17,8 @@ import '../../widgets/brass_glyph.dart';
 import '../../widgets/calendar_connect_sheet.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/maps_location_link.dart';
+import '../../widgets/meeting_places_row.dart';
+import '../../widgets/midway_spot_suggestions.dart';
 import '../../widgets/places_autocomplete_field.dart';
 
 /// A picked date/time + typed location from [_showProposalModal], before
@@ -48,40 +52,6 @@ Future<void> _addToDeviceCalendar({
     // meeting is still saved in-app either way.
   }
 }
-
-enum _MeetingActivity { coffee, lunch, errands, kidsSports, houseProject, grillingBbq, other }
-
-extension on _MeetingActivity {
-  bool get isOrganicLife => this != _MeetingActivity.coffee && this != _MeetingActivity.lunch;
-
-  String get chipLabel => switch (this) {
-        _MeetingActivity.coffee => 'Coffee',
-        _MeetingActivity.lunch => 'Lunch',
-        _MeetingActivity.errands => 'Errands',
-        _MeetingActivity.kidsSports => "Kids' Sports",
-        _MeetingActivity.houseProject => 'House Project',
-        _MeetingActivity.grillingBbq => 'Grilling/BBQ',
-        _MeetingActivity.other => 'Other',
-      };
-
-  String get inviteFragment => switch (this) {
-        _MeetingActivity.coffee => 'grab coffee',
-        _MeetingActivity.lunch => 'grab lunch',
-        _MeetingActivity.errands => 'join you for errands',
-        _MeetingActivity.kidsSports => "join you at the kids' games",
-        _MeetingActivity.houseProject => 'help out on a house project',
-        _MeetingActivity.grillingBbq => 'grill out together',
-        _MeetingActivity.other => 'spend time together',
-      };
-}
-
-const _organicLifeOptions = [
-  _MeetingActivity.errands,
-  _MeetingActivity.kidsSports,
-  _MeetingActivity.houseProject,
-  _MeetingActivity.grillingBbq,
-  _MeetingActivity.other,
-];
 
 enum _ContextualTone { struggling, celebrate }
 
@@ -125,7 +95,7 @@ class WitnessConnectScreen extends StatefulWidget {
 }
 
 class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
-  _MeetingActivity _activity = _MeetingActivity.coffee;
+  MeetingActivity _activity = MeetingActivity.coffee;
   ProposedMeeting? _proposal;
   String? _lastRunnerId;
   bool _isSending = false;
@@ -142,7 +112,14 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
     super.initState();
     // Fail-soft; keeps the "Calendars" button's count current.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) CalendarService.instance.load();
+      if (!mounted) return;
+      CalendarService.instance.load();
+      // Once per app session: map points for addresses saved before the
+      // midway suggestion existed. Quiet and fail-soft.
+      MeetingSpotService.instance.ensureMyCoordinates(
+        home: _profile.homeAddress,
+        work: _profile.workAddress,
+      );
     });
   }
 
@@ -156,29 +133,34 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
   /// "Other" that is whatever the Witness typed.
   String get _activityLabel {
     final typed = _otherController.text.trim();
-    return _activity == _MeetingActivity.other && typed.isNotEmpty ? typed : _activity.chipLabel;
+    return _activity == MeetingActivity.other && typed.isNotEmpty ? typed : _activity.chipLabel;
   }
 
   String get _inviteFragment {
     final typed = _otherController.text.trim();
-    return _activity == _MeetingActivity.other && typed.isNotEmpty
+    return _activity == MeetingActivity.other && typed.isNotEmpty
         ? "join you for $typed"
         : _activity.inviteFragment;
   }
 
-  void _selectActivity(_MeetingActivity activity) {
-    setState(() => _activity = activity);
+  /// Switching between coffee, lunch and Organic Life drops a proposal picked
+  /// for the old one — a 6 a.m. coffee time must never carry over to lunch.
+  /// (Moving between Organic Life's own sub-activities keeps it.)
+  void _selectActivity(MeetingActivity activity) {
+    setState(() {
+      if (activity.kind != _activity.kind) _proposal = null;
+      _activity = activity;
+    });
   }
 
   Future<void> _showProposalModal() async {
-    // Seed the pickers with a sensible starting point — 48 hours out, biased
-    // toward lunchtime when Lunch is the chosen activity — but the Witness
-    // can pick any future date/time and any location from here.
-    final seed = _proposal?.time ??
-        generateMeetingProposal(
-          isEmergency: false,
-          variation: _activity == _MeetingActivity.lunch ? 1 : 0,
-        ).time;
+    final kind = _activity.kind;
+    // Coffee / lunch start on the first usual time 48 hours or more out
+    // (replaced by the first time you are both free once calendars are
+    // checked); Organic Life suggests nothing, so the pickers simply start at
+    // the earliest allowed hour. Either way the Witness can pick any future
+    // date/time and any location from here.
+    final seed = _proposal?.time ?? defaultMeetingStart(kind, now: DateTime.now());
 
     var pickedDate = DateTime(seed.year, seed.month, seed.day);
     var pickedTime = TimeOfDay.fromDateTime(seed);
@@ -198,13 +180,11 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
           children: [
             Text('Propose a Time & Place', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
-            if (runnerId != null)
+            if (runnerId != null && kind.suggestsTimes)
               SharedTimesSuggestions(
                 otherUserId: runnerId,
                 otherName: 'Runner',
-                // Same 48-hour lead as the mock proposal seed.
-                earliest: const Duration(hours: 48),
-                durationMinutes: _activity == _MeetingActivity.lunch ? 60 : 45,
+                kind: kind,
                 selected: DateTime(
                   pickedDate.year,
                   pickedDate.month,
@@ -217,19 +197,22 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
                   pickedDate = DateTime(start.year, start.month, start.day);
                   pickedTime = TimeOfDay.fromDateTime(start);
                 }),
-                onLoaded: (slots) {
+                onLoaded: (first) {
                   if (timeTouched) return;
-                  // A real shared-free time replaces the mock suggestion.
-                  final suggested = generateMeetingProposal(
-                    isEmergency: false,
-                    variation: _activity == _MeetingActivity.lunch ? 1 : 0,
-                    sharedSlots: slots,
-                  ).time;
+                  // The first time you are both free replaces the seed.
                   setSheetState(() {
-                    pickedDate = DateTime(suggested.year, suggested.month, suggested.day);
-                    pickedTime = TimeOfDay.fromDateTime(suggested);
+                    pickedDate = DateTime(first.year, first.month, first.day);
+                    pickedTime = TimeOfDay.fromDateTime(first);
                   });
                 },
+              ),
+            if (!kind.suggestsTimes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  "Organic Life: choose the day, time and place that fit what you'll be doing.",
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
             BookplatePlate(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -276,6 +259,13 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
               controller: locationController,
               errorText: locationError ? 'Please enter a location.' : null,
             ),
+            if (runnerId != null && kind.suggestsPlace)
+              MidwaySpotSuggestions(
+                otherUserId: runnerId,
+                partnerWord: 'Runner',
+                kind: kind,
+                controller: locationController,
+              ),
             const SizedBox(height: 20),
             BookplateButton(
               label: 'Set Proposal',
@@ -491,7 +481,7 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final activity in [_MeetingActivity.coffee, _MeetingActivity.lunch])
+                  for (final activity in [MeetingActivity.coffee, MeetingActivity.lunch])
                     BookplateChip(
                       label: activity.chipLabel,
                       selected: _activity == activity,
@@ -500,7 +490,7 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
                   BookplateChip(
                     label: 'Organic Life',
                     selected: _activity.isOrganicLife,
-                    onTap: () => _selectActivity(_MeetingActivity.errands),
+                    onTap: () => _selectActivity(MeetingActivity.errands),
                   ),
                 ],
               ),
@@ -510,7 +500,7 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    for (final activity in _organicLifeOptions)
+                    for (final activity in MeetingActivity.organicLifeOptions)
                       BookplateChip(
                         label: activity.chipLabel,
                         selected: _activity == activity,
@@ -518,7 +508,7 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
                       ),
                   ],
                 ),
-                if (_activity == _MeetingActivity.other) ...[
+                if (_activity == MeetingActivity.other) ...[
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _otherController,
@@ -537,6 +527,10 @@ class _WitnessConnectScreenState extends State<WitnessConnectScreen> {
                 child: GradientButton(label: 'Suggest a Meeting', onPressed: _showProposalModal),
               ),
               const CalendarsLinkButton(),
+              const SizedBox(height: 4),
+              // Where the Witness starts from, for the midway coffee / lunch
+              // spot. Never shown to the Runner.
+              MeetingPlacesRow(profile: _profile, partnerWord: 'Runner'),
               if (_proposal != null) ...[
                 const SizedBox(height: 20),
                 _ProposedInviteCard(

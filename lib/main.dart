@@ -11,6 +11,7 @@ import 'screens/auth_gate.dart';
 import 'services/analytics_service.dart';
 import 'services/local_reminders.dart';
 import 'services/notification_router.dart';
+import 'services/presence.dart';
 import 'services/push_notifications.dart';
 import 'services/purchases_service.dart';
 import 'services/supabase_client.dart';
@@ -58,6 +59,9 @@ Future<void> main() async {
   );
   await _startOptional('Analytics', AnalyticsService.initialize);
   await _startOptional('Purchases', PurchasesService.initialize);
+  // "Last seen" for the server (Witness nudges when a Runner's phone goes
+  // silent): on session start and on every return to the foreground.
+  await _startOptional('Presence', () async => Presence.start());
 
   runApp(const TrellisApp());
 }

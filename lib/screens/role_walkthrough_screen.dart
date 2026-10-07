@@ -1,22 +1,29 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/phone_number.dart';
+import '../models/runner_profile.dart';
 import '../models/user_role.dart';
+import '../services/supabase_client.dart';
 import '../theme/app_colors.dart';
 import '../widgets/bookplate_app_bar.dart';
 import '../widgets/bookplate_dialog.dart';
 import '../widgets/bookplate_plate.dart';
 import '../widgets/launch_link.dart';
-import '../widgets/ornate_role_card.dart';
 import '../widgets/trellis_scaffold.dart';
-import 'role_selection_screen.dart';
+import 'church_data_sharing_consent_screen.dart';
+import 'welcome_walkthrough_screen.dart';
 
-/// "New here? Begin the journey" destination: a short role walkthrough
-/// (display-only — actual role picking happens on [RoleSelectionScreen],
-/// reached after submitting this form) followed by the account-detail
-/// fields. A back arrow (via the AppBar) returns straight to the Sign In
-/// screen, same as the "Already have an account?" link below the form.
+/// "New here? Begin the journey" destination: the Create Account form.
+///
+/// Creating the account happens right here (as a Runner, the base role every
+/// account has); the welcome deck follows, and its last slide asks how the
+/// person wants to start — Runner, Witness or Cloud — and opens that role's
+/// first step. (Role cards used to be shown here, then a role picker after the
+/// form; the deck now explains the roles with real screens and asks once, at
+/// the end.) A back arrow returns to the Sign In screen, as does the "Already
+/// have an account?" link below the form.
 class RoleWalkthroughScreen extends StatefulWidget {
   const RoleWalkthroughScreen({super.key});
 
@@ -25,8 +32,6 @@ class RoleWalkthroughScreen extends StatefulWidget {
 }
 
 class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
-  final _pageController = PageController(viewportFraction: 0.85);
-
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -35,8 +40,13 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
   final _churchNameController = TextEditingController();
   final _churchCodeController = TextEditingController();
 
-  int _walkthroughPage = 0;
   bool _agreedToTerms = false;
+  bool _isSubmitting = false;
+
+  /// The account this screen has already created, kept if a later step then
+  /// failed — so "try again" resumes from that step instead of signing up a
+  /// second time (which Auth refuses: the address is now taken).
+  RunnerProfile? _createdProfile;
   String? _errorMessage;
 
   late final _termsRecognizer = TapGestureRecognizer()
@@ -48,7 +58,6 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
     _phoneController.dispose();
@@ -62,20 +71,13 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
     super.dispose();
   }
 
-  void _goToWalkthroughPage(int page) {
-    _pageController.animateToPage(
-      page,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-
   // These are the legal documents the checkbox below asks the reader to agree
   // to, so a link that can't open says so (with the address) rather than
   // doing nothing.
   Future<void> _openUrl(String url) => openWebPage(context, url);
 
-  void _continueToRoleSelection() {
+  Future<void> _createAccount() async {
+    if (_isSubmitting) return;
     final firstName = _firstNameController.text.trim();
     final lastName = _lastNameController.text.trim();
     final email = _emailController.text.trim();
@@ -108,18 +110,104 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
       return;
     }
 
-    setState(() => _errorMessage = null);
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => RoleSelectionScreen(
-          email: email,
-          password: password,
-          name: '$firstName $lastName'.trim(),
-          phoneNumber: phone,
-          churchCode: _churchCodeController.text,
-        ),
-      ),
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+    try {
+      final profile = await _ensureAccount(
+        email: email,
+        password: password,
+        name: '$firstName $lastName'.trim(),
+        phone: phone,
+      );
+      // Tier 1 MHMDA consent (the checkbox above) gated account creation
+      // itself — record it now that the account exists.
+      await profile.recordConsumerHealthDataConsent();
+      await _joinChurchIfCodeGiven(profile);
+      if (!mounted) return;
+      // The welcome deck, then the role this person chooses to start with.
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => WelcomeWalkthroughScreen(profile: profile)),
+        (route) => false,
+      );
+    } on AuthException catch (error) {
+      if (mounted) setState(() => _errorMessage = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _errorMessage = 'Something went wrong creating your account. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  /// Signs up (as a Runner — every account's base role) and loads the new
+  /// profile, once.
+  Future<RunnerProfile> _ensureAccount({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+  }) async {
+    final existing = _createdProfile;
+    if (existing != null) return existing;
+
+    await supabase.auth.signUp(
+      email: email,
+      password: password,
+      // 'phone' is copied into the new profile by the database's sign-up
+      // trigger (migration 021).
+      data: {'name': name, 'role': UserRole.runner.dbValue, 'phone': phone},
     );
+
+    // If the Supabase project requires email confirmation, sign-up succeeds
+    // but there is no session until the link is followed — say exactly that.
+    if (supabase.auth.currentSession == null) {
+      throw const AuthException(
+        'Your account is created. Check your email for a confirmation link, then come '
+        'back and sign in.',
+      );
+    }
+
+    final profile = await RunnerProfile.loadCurrent();
+    _createdProfile = profile;
+    // Belt and braces for a database whose sign-up trigger doesn't copy the
+    // number yet. Best-effort — it can be added later under Account.
+    if (profile.phoneNumber == null) {
+      try {
+        await profile.setPhoneNumber(phone);
+      } catch (error) {
+        debugPrint('Saving the phone number at sign-up failed: ${error.runtimeType}');
+      }
+    }
+    return profile;
+  }
+
+  /// A church-gifted code entered on the form: ask for the separate Tier 2
+  /// consent (joining shares this person's summary with church leadership),
+  /// then join. A bad code never blocks sign-up — it is said plainly instead.
+  Future<void> _joinChurchIfCodeGiven(RunnerProfile profile) async {
+    final churchCode = _churchCodeController.text.trim();
+    if (churchCode.isEmpty || profile.churchId != null || !mounted) return;
+    final consented = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (context) => const ChurchDataSharingConsentScreen()),
+    );
+    if (consented != true) return;
+    var joined = false;
+    try {
+      joined = await profile.redeemChurchCode(churchCode);
+    } catch (error) {
+      debugPrint('redeemChurchCode at sign-up failed: $error');
+    }
+    if (!joined && mounted) {
+      showBookplateNotice(
+        context,
+        "That church code wasn't recognized. You can enter it again from Church "
+        'Affiliation in the menu.',
+        duration: const Duration(seconds: 6),
+      );
+    }
   }
 
   @override
@@ -146,56 +234,6 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
-              SizedBox(
-                height: 400,
-                child: PageView(
-                  controller: _pageController,
-                  onPageChanged: (page) => setState(() => _walkthroughPage = page),
-                  children: [
-                    for (final role in UserRole.values)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: OrnateRoleCard(role: role),
-                      ),
-                  ],
-                ),
-              ),
-              // The dots sit exactly where they did (20px below the cards,
-              // 40px above the form); the spacing that used to be SizedBoxes
-              // is now padding INSIDE each dot's tap area, making it 44px
-              // tall instead of 24.
-              const SizedBox(height: 2),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 0; i < UserRole.values.length; i++)
-                    Semantics(
-                      button: true,
-                      selected: _walkthroughPage == i,
-                      label: 'Show ${UserRole.values[i].label}',
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => _goToWalkthroughPage(i),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 18),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            width: _walkthroughPage == i ? 20 : 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: _walkthroughPage == i
-                                  ? AppColors.forestGreen
-                                  : AppColors.vellumBorder,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 22),
               // Same bookplate double-border edging as OrnateRoleCard /
               // the Sign In panel — two nested Containers plus a soft,
               // diffused shadow.
@@ -312,7 +350,8 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
                         const SizedBox(height: 24),
                         BookplateButton(
                           label: 'Create Account',
-                          onPressed: _continueToRoleSelection,
+                          busy: _isSubmitting,
+                          onPressed: _isSubmitting ? null : _createAccount,
                         ),
                         const SizedBox(height: 4),
                         BookplateButton(
@@ -336,7 +375,7 @@ class _RoleWalkthroughScreenState extends State<RoleWalkthroughScreen> {
 
 /// The Tier 1 MHMDA (Washington's My Health My Data Act) collection
 /// consent — required before an account can be created at all, per
-/// [_RoleWalkthroughScreenState._continueToRoleSelection] above. Each
+/// [_RoleWalkthroughScreenState._createAccount] above. Each
 /// hyperlinked term opens its web page via a [TapGestureRecognizer] owned
 /// (and disposed) by the parent state, since a new one built every frame
 /// would leak.

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../models/meeting_activity.dart';
 import '../../models/meeting_proposal_engine.dart';
 import '../../models/meeting_request.dart';
 import '../../models/runner_profile.dart';
 import '../../services/calendar_service.dart';
+import '../../services/meeting_spot_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_chip.dart';
 import '../../widgets/bookplate_date_picker.dart';
@@ -15,6 +17,8 @@ import '../../widgets/calendar_connect_sheet.dart';
 import '../../widgets/custom_toggle.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/maps_location_link.dart';
+import '../../widgets/meeting_places_row.dart';
+import '../../widgets/midway_spot_suggestions.dart';
 import '../../widgets/places_autocomplete_field.dart';
 
 /// A picked date/time + typed location from the proposal modal, before it's
@@ -39,6 +43,7 @@ class ConnectScreen extends StatefulWidget {
 
 class _ConnectScreenState extends State<ConnectScreen> {
   String? _selectedWitnessId;
+  MeetingKind _kind = MeetingKind.coffee;
   bool _isEmergency = false;
   bool _isSending = false;
   ProposedMeeting? _proposal;
@@ -65,6 +70,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (!mounted) return;
       // Fail-soft; keeps the "Calendars" button's count current.
       CalendarService.instance.load();
+      // Once per app session: map points for addresses saved before the
+      // midway suggestion existed. Quiet and fail-soft.
+      MeetingSpotService.instance.ensureMyCoordinates(
+        home: _profile.homeAddress,
+        work: _profile.workAddress,
+      );
       if (!_profile.hasCompletedSchedulingSetup) _showPermissionsGate();
     });
   }
@@ -73,76 +84,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
   /// asked once, not on every "Suggest a Meeting".
   bool _askedForPlaces = false;
 
-  /// "Home · 12 Elm St · Work · …", or an invitation when nothing is on file.
-  String _meetingPlacesSummary() {
-    final parts = <String>[];
-    final home = _profile.homeAddress?.trim() ?? '';
-    final work = _profile.workAddress?.trim() ?? '';
-    if (home.isNotEmpty) parts.add('Home · $home');
-    if (work.isNotEmpty) parts.add('Work · $work');
-    if (parts.isEmpty) return 'Add your home and work so meeting spots can land midway.';
-    return parts.join('\n');
-  }
-
-  /// Enter or change the home / work addresses — the same two fields the
-  /// first-run gate asks for, now reachable any time. Returns true if saved.
-  Future<bool> _editMeetingPlaces() async {
-    final homeController = TextEditingController(text: _profile.homeAddress ?? '');
-    final workController = TextEditingController(text: _profile.workAddress ?? '');
-
-    final saved = await showBookplateForm<bool>(
-      context,
-      title: 'Meeting Places',
-      message: 'Where you start from, so meeting suggestions can land somewhere fair '
-          'between you and your Witness. Only you and the suggestion engine see these.',
-      bodyBuilder: (dialogContext, setDialogState) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: homeController,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
-            keyboardType: TextInputType.streetAddress,
-            decoration: const InputDecoration(labelText: 'Home Address'),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: workController,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.done,
-            keyboardType: TextInputType.streetAddress,
-            decoration: const InputDecoration(labelText: 'Work Address'),
-          ),
-        ],
-      ),
-      actionsBuilder: (dialogContext, setDialogState) => [
-        BookplateButton(
-          label: 'Save',
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-        ),
-        BookplateButton(
-          label: 'Cancel',
-          variant: BookplateButtonVariant.link,
-          compact: true,
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-        ),
-      ],
-    );
-    final home = homeController.text;
-    final work = workController.text;
-    disposeAfterBookplateClose([homeController, workController]);
-    if (saved != true || !mounted) return false;
-
-    try {
-      await _profile.updateMeetingPlaces(homeAddress: home, workAddress: work);
-    } catch (_) {
-      if (mounted) {
-        showBookplateNotice(context, "Couldn't save your meeting places. Check your connection.");
-      }
-      return false;
-    }
-    return true;
+  /// Switching between coffee, lunch and Organic Life drops a proposal picked
+  /// for the old one — a 6 a.m. coffee time must never carry over to lunch.
+  void _selectKind(MeetingKind kind) {
+    setState(() {
+      if (kind != _kind) _proposal = null;
+      _kind = kind;
+    });
   }
 
   /// Before the first suggestion of a visit with no addresses on file: offer
@@ -159,17 +107,22 @@ class _ConnectScreenState extends State<ConnectScreen> {
       cancelLabel: 'Not now',
     );
     if (!add || !mounted) return;
-    await _editMeetingPlaces();
+    await editMeetingPlaces(context, _profile, partnerWord: 'Witness');
   }
 
   Future<void> _showProposalModal() async {
     await _offerMeetingPlacesIfMissing();
     if (!mounted) return;
 
-    // Seed the pickers with a sensible starting point — 48 hours out (or 2
-    // hours for an emergency) — but the Runner can pick any future
-    // date/time and any location from here.
-    final seed = _proposal?.time ?? generateMeetingProposal(isEmergency: _isEmergency, variation: 0).time;
+    final kind = _kind;
+    final isEmergency = _isEmergency;
+    // Coffee / lunch start on the first usual time 48 hours or more out (2
+    // hours for an emergency), replaced by the first time you are both free
+    // once calendars are checked; Organic Life suggests nothing, so the
+    // pickers simply start at the earliest allowed hour. Either way the
+    // Runner can pick any future date/time and any location from here.
+    final seed =
+        _proposal?.time ?? defaultMeetingStart(kind, now: DateTime.now(), emergency: isEmergency);
 
     var pickedDate = DateTime(seed.year, seed.month, seed.day);
     var pickedTime = TimeOfDay.fromDateTime(seed);
@@ -189,14 +142,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
           children: [
             Text('Propose a Time & Place', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
-            if (witnessId != null)
+            if (witnessId != null && kind.suggestsTimes)
               SharedTimesSuggestions(
                 otherUserId: witnessId,
                 // The role word, as the widget's copy expects ("Your Witness
-                // hasn't connected…") — a first name here read "Your Sam…".
+                // isn't sharing…") — a first name here read "Your Sam…".
                 otherName: 'Witness',
-                // Mirrors the 48-hour rule the Emergency toggle bypasses.
-                earliest: _isEmergency ? const Duration(hours: 2) : const Duration(hours: 48),
+                kind: kind,
+                // The 48-hour rule, or today/tomorrow when it is bypassed.
+                emergency: isEmergency,
                 selected: DateTime(
                   pickedDate.year,
                   pickedDate.month,
@@ -209,19 +163,22 @@ class _ConnectScreenState extends State<ConnectScreen> {
                   pickedDate = DateTime(start.year, start.month, start.day);
                   pickedTime = TimeOfDay.fromDateTime(start);
                 }),
-                onLoaded: (slots) {
+                onLoaded: (first) {
                   if (timeTouched) return;
-                  // A real shared-free time replaces the mock suggestion.
-                  final suggested = generateMeetingProposal(
-                    isEmergency: _isEmergency,
-                    variation: 0,
-                    sharedSlots: slots,
-                  ).time;
+                  // The first time you are both free replaces the seed.
                   setSheetState(() {
-                    pickedDate = DateTime(suggested.year, suggested.month, suggested.day);
-                    pickedTime = TimeOfDay.fromDateTime(suggested);
+                    pickedDate = DateTime(first.year, first.month, first.day);
+                    pickedTime = TimeOfDay.fromDateTime(first);
                   });
                 },
+              ),
+            if (!kind.suggestsTimes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  "Organic Life: choose the day, time and place that fit what you'll be doing.",
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
             BookplatePlate(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -268,6 +225,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
               controller: locationController,
               errorText: locationError ? 'Please enter a location.' : null,
             ),
+            if (witnessId != null && kind.suggestsPlace)
+              MidwaySpotSuggestions(
+                otherUserId: witnessId,
+                partnerWord: 'Witness',
+                kind: kind,
+                controller: locationController,
+              ),
             const SizedBox(height: 20),
             BookplateButton(
               label: 'Set Proposal',
@@ -512,6 +476,25 @@ class _ConnectScreenState extends State<ConnectScreen> {
               ],
             ),
             const SizedBox(height: 20),
+            Text('Choose an Activity', style: textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final (kind, label) in const [
+                  (MeetingKind.coffee, 'Coffee'),
+                  (MeetingKind.lunch, 'Lunch'),
+                  (MeetingKind.organicLife, 'Organic Life'),
+                ])
+                  BookplateChip(
+                    label: label,
+                    selected: _kind == kind,
+                    onTap: () => _selectKind(kind),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
             Center(
               child: GradientButton(label: 'Suggest a Meeting', onPressed: _showProposalModal),
             ),
@@ -519,16 +502,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
             const SizedBox(height: 4),
             // Home / work, editable any time (the first-run gate used to be
             // the only chance to enter them).
-            BookplatePlate(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: BookplateRow(
-                leading: const BrassGlyph(BrassGlyphKind.pin, color: AppColors.antiqueBrass),
-                title: 'Meeting Places',
-                subtitle: _meetingPlacesSummary(),
-                trailing: const BrassGlyph(BrassGlyphKind.forward),
-                onTap: _editMeetingPlaces,
-              ),
-            ),
+            MeetingPlacesRow(profile: _profile, partnerWord: 'Witness'),
             const SizedBox(height: 12),
             BookplatePlate(
               child: Row(

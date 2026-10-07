@@ -11,6 +11,7 @@ import '../widgets/vine_frame.dart';
 import '../widgets/bookplate_dialog.dart';
 import '../widgets/bookplate_plate.dart';
 import '../widgets/brass_glyph.dart';
+import '../widgets/cloud_preview.dart';
 import '../widgets/feedback_dialog.dart';
 import '../widgets/nav_icon.dart';
 import '../widgets/vine_safe_app_bar.dart';
@@ -22,10 +23,19 @@ import 'cloud/cloud_treasury_screen.dart';
 /// Primary navigation shell for the Cloud (Church Admin) role: bottom tab
 /// bar, the same hamburger settings drawer as the other shells, and a
 /// role-switcher chip.
+///
+/// In [preview] (or for any [RunnerProfile.isPreview] profile) the shell shows
+/// sample data: a brass "Preview" banner with a way out, an Exit button in
+/// place of the menu, no data load, and a "nothing here is saved" notice for
+/// every action that would write or reach out to someone.
 class CloudShell extends StatefulWidget {
-  const CloudShell({super.key, required this.profile});
+  const CloudShell({super.key, required this.profile, this.preview = false});
 
   final RunnerProfile profile;
+
+  /// Show [profile] as the Cloud preview. Pass a [RunnerProfile.preview]
+  /// profile: the tabs refuse writes by checking the profile itself.
+  final bool preview;
 
   @override
   State<CloudShell> createState() => _CloudShellState();
@@ -36,6 +46,13 @@ class _CloudShellState extends State<CloudShell>
   int _tabIndex = 0;
 
   RunnerProfile get _profile => widget.profile;
+
+  bool get _isPreview => widget.preview || widget.profile.isPreview;
+
+  /// Leaves the preview, back to wherever it was opened from.
+  void _exitPreview() => Navigator.of(context).maybePop();
+
+  void _previewNotice() => showBookplateNotice(context, PreviewModeException.message);
 
   static const _navItems = [
     BottomNavigationBarItem(
@@ -58,7 +75,8 @@ class _CloudShellState extends State<CloudShell>
   @override
   void initState() {
     super.initState();
-    _loadCloud();
+    // The preview's sample data is already all there; nothing to fetch.
+    if (!_isPreview) _loadCloud();
   }
 
   /// Loads (or, from a Retry, re-loads) the church's data. While it runs the
@@ -83,7 +101,8 @@ class _CloudShellState extends State<CloudShell>
         return Scaffold(
           // The parchment gradient runs on behind the footer (see BottomVineFrame).
           extendBody: true,
-          drawer: SettingsDrawer(profile: _profile, inCloud: true),
+          // A preview has no account behind it to manage or sign out of.
+          drawer: _isPreview ? null : SettingsDrawer(profile: _profile, inCloud: true),
           // The same forest-green veil as every bookplate dialog and sheet,
           // rather than Material's stock black scrim.
           drawerScrimColor: AppColors.forestGreen.withValues(alpha: 0.45),
@@ -96,7 +115,13 @@ class _CloudShellState extends State<CloudShell>
             header: AppBar(
               toolbarHeight: VineSafeAppBar.toolbarHeight,
               automaticallyImplyLeading: false,
-              leading: const ShellMenuButton(),
+              leading: _isPreview
+                  ? BrassGlyphButton(
+                      kind: BrassGlyphKind.close,
+                      semanticLabel: 'Exit preview',
+                      onPressed: _exitPreview,
+                    )
+                  : const ShellMenuButton(),
               title: AppBarTitle(_profile.churchName ?? 'Church Canopy'),
               actions: shellAppBarActions(
                 context,
@@ -114,7 +139,9 @@ class _CloudShellState extends State<CloudShell>
                   ShellAction(
                     glyph: BrassGlyphKind.leaf,
                     label: 'Send Feedback',
-                    onPressed: () => showFeedbackDialog(context, _profile),
+                    onPressed: _isPreview
+                        ? _previewNotice
+                        : () => showFeedbackDialog(context, _profile),
                   ),
                 ],
                 roleSwitcher: RoleSwitcherButton(
@@ -122,15 +149,20 @@ class _CloudShellState extends State<CloudShell>
                   // actually inside the Cloud shell, show "Cloud" rather than
                   // whichever of those two was last active.
                   label: 'Cloud',
-                  onPressed: () =>
-                      showRoleSwitcherSheet(context, _profile, inCloud: true),
+                  // The preview's "account" is sample data: there is no role
+                  // to switch to, and the real account is not touched.
+                  onPressed: _isPreview
+                      ? _previewNotice
+                      : () => showRoleSwitcherSheet(context, _profile, inCloud: true),
                 ),
               ),
             ),
             child: Column(
               children: [
+                if (_isPreview)
+                  CloudPreviewBanner(onExit: _exitPreview)
                 // Still loading: say so, or every tab reads "No data yet".
-                if (shellLoadingVisible)
+                else if (shellLoadingVisible)
                   const ShellLoadingLine(label: "Loading your church's data…")
                 // Everything failed: a connection or sign-in problem —
                 // a real error. (An EMPTY church is not one; the tabs

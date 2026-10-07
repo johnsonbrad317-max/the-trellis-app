@@ -130,8 +130,10 @@ void _switchToFreeRole(
 }
 
 Future<void> _showCloudAccessCodeDialog(BuildContext context, RunnerProfile profile) async {
-  final redeemed = await showCloudAccessCodeDialog(context, profile);
-  if (!redeemed || !context.mounted) return;
+  // A preview has already been shown and exited by the time this returns, and
+  // a cancel changes nothing: only a redeemed code moves on into the Cloud.
+  final result = await showCloudAccessCodeDialog(context, profile);
+  if (result != CloudAccessResult.unlocked || !context.mounted) return;
 
   Navigator.of(context).pushReplacement(
     MaterialPageRoute(builder: (context) => CloudShell(profile: profile)),

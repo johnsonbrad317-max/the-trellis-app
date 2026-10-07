@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 
 import '../models/calendar_connection.dart';
-import '../models/meeting_proposal_engine.dart' show formatSlotLabel;
+import '../models/meeting_activity.dart';
+import '../models/meeting_proposal_engine.dart' show formatMeetingDate, formatSlotLabel;
 import '../services/calendar_service.dart';
 import '../theme/app_colors.dart';
 import 'bookplate_chip.dart';
@@ -191,12 +193,31 @@ class _CalendarSheetBodyState extends State<_CalendarSheetBody> {
               'partner always sees your real week.',
               style: textTheme.bodySmall,
             ),
+            const SizedBox(height: 12),
+            // The commonest surprise: an Outlook (or Google) calendar that
+            // lives only inside its own app is not on the phone's calendar
+            // list, so it can't be read until the account is added to the
+            // phone itself. The calendar tags above show which accounts are.
+            BookplatePlate(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    "Don't see your Outlook or Google calendar?",
+                    style: textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(calendarAccountHelp(defaultTargetPlatform), style: textTheme.bodySmall),
+                ],
+              ),
+            ),
             const SizedBox(height: 8),
             // Family wall calendars (Skylight and the like) mirror one of the
-            // calendars on the phone, so they are covered already.
+            // calendars on the phone, so they are covered once that is.
             Text(
               'Use a Skylight or another family wall calendar? It mirrors a Google, Apple or '
-              'Outlook calendar — and that one is on this phone, so your Skylight is covered.',
+              'Outlook calendar — share that calendar here and your Skylight is covered.',
               style: textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
             ),
             const SizedBox(height: 16),
@@ -231,24 +252,30 @@ class CalendarsLinkButton extends StatelessWidget {
   }
 }
 
-/// "Times you both have free" for the proposal sheets: works out windows when
-/// both the signed-in person and [otherUserId] are open, and shows them as
-/// chips. Tapping a chip calls [onPick] with that window's start. If either
-/// side isn't sharing a calendar it says so quietly instead — never revealing
-/// anything about the other person's calendar beyond "sharing or not" and how
-/// long ago their phone last uploaded. Any failure degrades to a one-line
-/// note; manual entry always works.
+/// The coffee / lunch times on offer in the proposal sheets, one row per day
+/// ("Mon, Oct 12") with small time chips ("6:00 · 6:30 · 7:00").
+///
+/// The times come from [MeetingKind] (meeting_activity.dart) — coffee never
+/// shows lunch times and lunch never shows coffee times. When both the
+/// signed-in person and [otherUserId] share a calendar, only the times both
+/// are free for the whole meeting are shown; when either doesn't, the usual
+/// times are shown unchecked with a one-line note saying so. Never reveals
+/// anything about the other person's calendar beyond "sharing or not", which
+/// times are free for both, and how long ago their phone last uploaded. Any
+/// failure degrades to the unchecked times; the pickers below always work.
+///
+/// Tapping a chip calls [onPick] with that start. [onLoaded] is called once
+/// with the first time on offer (e.g. to pre-fill the pickers).
 class SharedTimesSuggestions extends StatefulWidget {
   const SharedTimesSuggestions({
     super.key,
     required this.otherUserId,
     required this.otherName,
-    required this.earliest,
+    required this.kind,
     required this.selected,
     required this.onPick,
+    this.emergency = false,
     this.onLoaded,
-    this.durationMinutes = 60,
-    this.searchDays = 14,
   });
 
   final String otherUserId;
@@ -256,27 +283,33 @@ class SharedTimesSuggestions extends StatefulWidget {
   /// How to refer to the other person in the explanatory line, e.g. "Witness".
   final String otherName;
 
-  /// How far from now suggestions may start (e.g. the 48-hour rule).
-  final Duration earliest;
+  /// Coffee or lunch. Organic Life offers no times, so this shows nothing.
+  final MeetingKind kind;
+
+  /// The Runner's Emergency toggle: today's and tomorrow's remaining times.
+  final bool emergency;
 
   /// The date/time currently picked in the sheet, so a matching chip shows
   /// as selected.
   final DateTime? selected;
   final ValueChanged<DateTime> onPick;
-
-  /// Called once with the shared windows when both people are sharing and
-  /// at least one exists (e.g. to pre-fill the first suggestion).
-  final ValueChanged<List<SharedSlot>>? onLoaded;
-  final int durationMinutes;
-  final int searchDays;
+  final ValueChanged<DateTime>? onLoaded;
 
   @override
   State<SharedTimesSuggestions> createState() => _SharedTimesSuggestionsState();
 }
 
 class _SharedTimesSuggestionsState extends State<SharedTimesSuggestions> {
+  /// The usual times for the coming days, before any calendar is checked.
+  List<MeetingDaySlots> _candidates = const [];
+
+  /// What is shown: [_candidates], filtered when both calendars are shared.
+  List<MeetingDaySlots> _days = const [];
   PairAvailability? _availability;
   bool _loading = true;
+
+  /// Bumped on every fetch so a slow, superseded answer is ignored.
+  int _generation = 0;
 
   @override
   void initState() {
@@ -284,23 +317,50 @@ class _SharedTimesSuggestionsState extends State<SharedTimesSuggestions> {
     _fetch();
   }
 
+  @override
+  void didUpdateWidget(SharedTimesSuggestions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.kind != widget.kind ||
+        oldWidget.emergency != widget.emergency ||
+        oldWidget.otherUserId != widget.otherUserId) {
+      _fetch();
+    }
+  }
+
   Future<void> _fetch() async {
-    setState(() => _loading = true);
-    final from = DateTime.now().add(widget.earliest);
+    final generation = ++_generation;
+    final kind = widget.kind;
+    final candidates = candidateMeetingDays(kind, now: DateTime.now(), emergency: widget.emergency);
+    final window = meetingSearchWindow(candidates, durationMinutes: kind.durationMinutes);
+    setState(() {
+      _candidates = candidates;
+      _days = candidates;
+      _availability = null;
+      _loading = window != null;
+    });
+    if (window == null) return;
+
     final result = await CalendarService.instance.availabilityWith(
       widget.otherUserId,
-      from: from,
-      to: from.add(Duration(days: widget.searchDays)),
-      durationMinutes: widget.durationMinutes,
+      from: window.start,
+      to: window.end,
+      durationMinutes: kind.durationMinutes,
     );
-    if (!mounted) return;
+    if (!mounted || generation != _generation) return;
+
+    final bothSharing = result != null && result.bothSharing;
+    final days = filterFreeForBoth(
+      candidates,
+      durationMinutes: kind.durationMinutes,
+      busyA: bothSharing ? result.myBusy : null,
+      busyB: bothSharing ? result.otherBusy : null,
+    );
     setState(() {
       _availability = result;
+      _days = days;
       _loading = false;
     });
-    if (result != null && result.bothSharing && result.suggestions.isNotEmpty) {
-      widget.onLoaded?.call(result.suggestions);
-    }
+    if (days.isNotEmpty) widget.onLoaded?.call(days.first.starts.first);
   }
 
   Future<void> _shareCalendar() async {
@@ -310,86 +370,158 @@ class _SharedTimesSuggestionsState extends State<SharedTimesSuggestions> {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final availability = _availability;
+    if (_candidates.isEmpty) return const SizedBox.shrink();
 
-    final Widget content;
+    final textTheme = Theme.of(context).textTheme;
+    final noteStyle = textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic);
+    final availability = _availability;
+    final checked = availability != null && availability.bothSharing;
+    final noun = widget.kind.timesNoun;
+
+    final children = <Widget>[];
     if (_loading) {
-      content = Row(
-        children: [
-          const BookplateSpinner(size: 16),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text('Looking for times you both have free…', style: textTheme.bodySmall),
-          ),
-        ],
+      children.add(
+        Row(
+          children: [
+            const BookplateSpinner(size: 16),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('Checking $noun times you both have free…', style: textTheme.bodySmall),
+            ),
+          ],
+        ),
       );
-    } else if (availability == null) {
-      content = Text(
-        "Couldn't check calendars just now — pick a time below.",
-        style: textTheme.bodySmall,
+    } else {
+      children.add(
+        Text(
+          checked ? 'Free for you both' : 'Usual $noun times',
+          style: textTheme.titleMedium,
+        ),
       );
-    } else if (!availability.meSharing) {
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      children.add(const SizedBox(height: 6));
+      if (_days.isEmpty) {
+        children.add(
           Text(
-            "Share this phone's calendar and The Trellis can suggest times you both have free.",
+            'No $noun time in the next few days works for you both. Pick a time below.',
             style: textTheme.bodySmall,
           ),
+        );
+      } else {
+        for (final day in _days) {
+          children.add(
+            _DayTimesRow(
+              day: day,
+              selected: widget.selected,
+              onPick: widget.onPick,
+            ),
+          );
+        }
+      }
+      children.add(const SizedBox(height: 4));
+      if (availability == null) {
+        children.add(Text("Couldn't check calendars just now.", style: noteStyle));
+      } else if (!availability.meSharing) {
+        children.add(
+          Text(
+            "Calendars aren't being checked — share yours so these show only times you "
+            'are both free.',
+            style: noteStyle,
+          ),
+        );
+        children.add(
           BookplateButton(
             label: 'Share my calendar',
             variant: BookplateButtonVariant.link,
+            compact: true,
             onPressed: _shareCalendar,
           ),
-        ],
-      );
-    } else if (!availability.otherSharing) {
-      content = Text(
-        "Your ${widget.otherName} isn't sharing a calendar yet, so there are no shared times "
-        'to suggest. Pick a time below.',
-        style: textTheme.bodySmall,
-      );
-    } else if (availability.suggestions.isEmpty) {
-      content = Text(
-        'No shared open times in the next ${widget.searchDays} days. Pick a time below.',
-        style: textTheme.bodySmall,
-      );
-    } else {
-      final staleDays = availability.otherStaleDays();
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Times you both have free', style: textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final slot in availability.suggestions)
-                BookplateChip(
-                  label: formatSlotLabel(slot.start),
-                  selected: widget.selected == slot.start,
-                  onTap: () => widget.onPick(slot.start),
-                ),
-            ],
+        );
+      } else if (!availability.otherSharing) {
+        children.add(
+          Text(
+            "Calendars aren't being checked — your ${widget.otherName} isn't sharing one yet.",
+            style: noteStyle,
           ),
-          if (staleDays != null && staleDays >= 2) ...[
-            const SizedBox(height: 8),
+        );
+      } else {
+        final staleDays = availability.otherStaleDays();
+        if (staleDays != null && staleDays >= 2) {
+          children.add(
             Text(
-              "Your ${widget.otherName}'s calendar was last shared "
-              '${staleDays == 1 ? 'yesterday' : '$staleDays days ago'} — newer plans may not '
-              'show here.',
-              style: textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+              "Your ${widget.otherName}'s calendar was last shared $staleDays days ago — newer "
+              'plans may not show here.',
+              style: noteStyle,
             ),
-          ],
-        ],
-      );
+          );
+        }
+      }
     }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: content,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
     );
   }
 }
+
+/// "Mon, Oct 12" over its time chips. The day sits on its own line so a full
+/// morning of five coffee times fits on one row even on a small phone (side by
+/// side, the chips wrapped and the day floated between two rows).
+class _DayTimesRow extends StatelessWidget {
+  const _DayTimesRow({required this.day, required this.selected, required this.onPick});
+
+  final MeetingDaySlots day;
+  final DateTime? selected;
+  final ValueChanged<DateTime> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            formatMeetingDate(day.day),
+            style: textTheme.bodyMedium?.copyWith(
+              color: AppColors.forestGreen,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final start in day.starts)
+                Semantics(
+                  label: formatSlotLabel(start),
+                  excludeSemantics: true,
+                  button: true,
+                  onTap: () => onPick(start),
+                  child: BookplateChip(
+                    label: formatChipTime(start),
+                    compact: true,
+                    selected: selected == start,
+                    onTap: () => onPick(start),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// How to get a calendar that lives in an email account (Outlook, Gmail) onto
+/// the phone's own calendar list, which is what The Trellis reads.
+String calendarAccountHelp(TargetPlatform platform) => platform == TargetPlatform.android
+    ? 'The Trellis reads the calendars your phone syncs. In the Outlook app, open Settings, '
+        'tap your account and turn on Sync calendars. A Google account added to the phone is '
+        'read automatically.'
+    : 'The Trellis reads the calendars your iPhone syncs. The Outlook app keeps its calendar '
+        'to itself, so add the account to the iPhone: Settings → Apps → Calendar → Calendar '
+        'Accounts → Add Account → Microsoft Exchange (work or school) or Outlook.com, and '
+        'switch Calendars on. Google works the same way. Then tap Refresh now.';
