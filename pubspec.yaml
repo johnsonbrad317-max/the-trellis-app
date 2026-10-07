@@ -71,6 +71,9 @@ flutter:
     # Screens shown in the welcome deck (regenerate with
     # test/render_welcome_screens_test.dart when they change).
     - assets/images/welcome/
+    # The living vine: one grapevine in 27 aligned layers (stem x3, six
+    # branches x4), assembled by VineScene in lib/widgets/vine_visualizer.dart.
+    - assets/images/vine/
     - assets/fonts/OFL.txt
 
   # EB Garamond, bundled (SIL Open Font License, assets/fonts/OFL.txt) so type

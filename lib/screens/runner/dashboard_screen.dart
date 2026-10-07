@@ -14,7 +14,7 @@ import '../../widgets/vine_visualizer.dart';
 
 /// Below this share of scheduled days a rhythm reads as needing care; at or
 /// above it, as a faithful one. (The Trellis's own tiers — struggling under
-/// 0.45, flourishing from 0.75 — live in [TrellisState].)
+/// half, fruit on every branch from 90% — live in [VineScene].)
 const _faithfulFrom = 0.6;
 
 /// A rhythm needs at least this many scheduled days behind it before an
@@ -68,6 +68,9 @@ class DashboardScreen extends StatelessWidget {
                   vitalityScore: hasData ? analytics.score : 0,
                   isDrooping: hasData && analytics.isDrooping,
                   hasData: hasData,
+                  // The vine grows a branch a week from the day the Rule of
+                  // Life was committed.
+                  seasonDays: daysSince(profile.ruleCommittedAt),
                 ),
               ),
             ),

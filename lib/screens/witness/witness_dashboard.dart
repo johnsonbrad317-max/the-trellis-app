@@ -202,6 +202,7 @@ class WitnessDashboardScreen extends StatelessWidget {
                     isDrooping: !selected.isGettingStarted &&
                         (selected.isSeasonDrooping || selected.missedAnchorAlert != null),
                     hasData: selected.hasSeasonData || selected.lastCheckInDate != null,
+                    seasonDays: daysSince(selected.ruleCommittedAt),
                     showTitle: false,
                     emptyCaption: 'Hold them accountable, and watch them grow.',
                   ),

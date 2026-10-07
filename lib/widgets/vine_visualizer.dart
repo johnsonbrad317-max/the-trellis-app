@@ -3,133 +3,296 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'trimmed_asset.dart';
 
-/// Which of the five illustrations a Runner's season calls for: the bare
-/// wooden trellis, or one of four vines drawn ALONE on a transparent canvas
-/// (no trellis of their own), to be laid over it.
-enum TrellisState {
-  empty('assets/images/trellis_empty.png'),
-  growing('assets/images/trellis_growing.png'),
-  flourishing('assets/images/trellis_flourishing.png'),
-  // Exported at a lower resolution than the others (same proportions).
-  struggling('assets/images/trellis_struggling.png', imageSize: Size(687, 1024)),
-  dead('assets/images/trellis_dead.png');
+/// One condition of a vine part, as drawn in assets/images/vine/.
+enum VinePartState {
+  /// Not grown yet — not drawn at all.
+  hidden,
+  bare,
+  leafed,
+  fruiting,
+  withered,
+}
 
-  const TrellisState(this.asset, {this.imageSize = const Size(1696, 2528)});
+/// The vine as it stands on a given day: how far the main stem has climbed
+/// and the condition of each of its six side branches (1 lowest, 6 highest).
+///
+/// The art is ONE grapevine drawn in aligned layers — a stem in three states
+/// and six branches in four — so the picture changes piece by piece: a new
+/// Runner sees a young shoot, a branch appears each week of their season,
+/// branches bear fruit as they keep their rhythms, and a hard stretch withers
+/// the newest one or two while the rest stand.
+@immutable
+class VineScene {
+  const VineScene({required this.stem, required this.stemReveal, required this.branches})
+      : assert(branches.length == 6);
 
-  final String asset;
+  /// bare, leafed or withered (never hidden or fruiting).
+  final VinePartState stem;
 
-  /// The PNG's pixel size. All five share one canvas shape (2:3, the trellis
-  /// frame region below); this only differs where an export was smaller.
-  final Size imageSize;
+  /// The share of the stem shown, from the bottom (0.0-1.0).
+  final double stemReveal;
 
-  /// The state for a season. [hasData] is false until the Runner has real
-  /// check-ins — a brand-new Runner always sees the empty trellis, never a
-  /// score. After that, [consistency] (0.0-1.0) picks the tier, and an
-  /// Anchor Rhythm missed three times running ([isDrooping]) caps it at
-  /// struggling.
-  static TrellisState of({
+  /// Branches 1-6, lowest first.
+  final List<VinePartState> branches;
+
+  /// Where each branch leaves the stem, on the 2528-high canvas (README).
+  static const _attachY = [2250.0, 1950.0, 1650.0, 1350.0, 1050.0, 750.0];
+  static const _canvasHeight = 2528.0;
+
+  /// How many days of the season it takes for each new branch to appear.
+  static const daysPerBranch = 7;
+
+  /// The scene for a season.
+  ///
+  /// * [hasData] false (no check-ins yet): a young bare shoot, nothing more.
+  /// * [seasonDays] — days since the Rule of Life was committed — sets how
+  ///   far the vine has grown: one branch the first week, a new one each
+  ///   week after, all six from the sixth week. Unknown (null) means fully
+  ///   grown, for views that only know the season's score.
+  /// * [consistency] (0.0-1.0, the share of rhythms kept) decides how many
+  ///   of the grown branches bear fruit — the oldest first — from none below
+  ///   half to all of them at 90%.
+  /// * A hard stretch withers branches, the newest first: one below 50%,
+  ///   two below 30% or after three missed Anchor Rhythms ([isDrooping]); and
+  ///   below 15% the whole vine, stem included, has withered.
+  /// * The newest branch is bare for the first few days after it appears.
+  static VineScene of({
     required bool hasData,
     required double consistency,
     required bool isDrooping,
+    int? seasonDays,
   }) {
-    if (!hasData) return TrellisState.empty;
-    if (consistency < 0.15) return TrellisState.dead;
-    if (isDrooping || consistency < 0.45) return TrellisState.struggling;
-    if (consistency < 0.75) return TrellisState.growing;
-    return TrellisState.flourishing;
-  }
-}
+    if (!hasData) {
+      return VineScene(
+        stem: VinePartState.bare,
+        stemReveal: _revealFor(1, beforeBranch: true),
+        branches: List.filled(6, VinePartState.hidden),
+      );
+    }
 
-/// The Trellis visual, built as a two-layer Stack: the bottom layer is always
-/// the bare wooden `trellis_empty.png`, and over it sits the current
-/// [TrellisState]'s vine — drawn alone on a transparent canvas of the same
-/// shape, so there is one trellis, never two — inside a ClipRect anchored at
-/// the bottom. [reveal] (0.0-1.0) is the share of the vine's height that
-/// shows, so consistency grows it up the trellis. The empty state is just the
-/// bare base.
-class TrellisVisual extends StatelessWidget {
-  const TrellisVisual({
-    super.key,
-    required this.state,
-    required this.reveal,
-    this.height = 280,
-  });
+    final days = seasonDays == null ? null : (seasonDays < 0 ? 0 : seasonDays);
+    final grown = days == null ? 6 : (1 + days ~/ daysPerBranch).clamp(1, 6);
+    final newestIsBare = days != null && grown < 6 && days % daysPerBranch < 3;
+    final score = consistency.isNaN ? 0.0 : consistency.clamp(0.0, 1.0);
 
-  final TrellisState state;
-  final double reveal;
-  final double height;
+    if (score < 0.15) {
+      return VineScene(
+        stem: VinePartState.withered,
+        stemReveal: _revealFor(grown),
+        branches: [
+          for (var i = 0; i < 6; i++) i < grown ? VinePartState.withered : VinePartState.hidden,
+        ],
+      );
+    }
 
-  // The region of the shared canvas that holds the trellis frame, as a
-  // fraction of the canvas, so a vine exported at another resolution still
-  // lands in the same place over the wood.
-  static const _frame = Rect.fromLTRB(120 / 1696, 36 / 2528, 1578 / 1696, 2442 / 2528);
+    final withered = (isDrooping || score < 0.3) ? 2 : (score < 0.5 ? 1 : 0);
+    final fruitShare = ((score - 0.5) / 0.4).clamp(0.0, 1.0);
+    final fruiting = (grown * fruitShare).round();
 
-  static Rect _contentFor(TrellisState layerState) {
-    final size = layerState.imageSize;
-    return Rect.fromLTRB(
-      _frame.left * size.width,
-      _frame.top * size.height,
-      _frame.right * size.width,
-      _frame.bottom * size.height,
+    final branches = <VinePartState>[];
+    for (var i = 0; i < 6; i++) {
+      if (i >= grown) {
+        branches.add(VinePartState.hidden);
+      } else if (i >= grown - withered) {
+        branches.add(VinePartState.withered);
+      } else if (newestIsBare && i == grown - 1) {
+        branches.add(VinePartState.bare);
+      } else if (i < fruiting) {
+        branches.add(VinePartState.fruiting);
+      } else {
+        branches.add(VinePartState.leafed);
+      }
+    }
+    return VineScene(
+      stem: VinePartState.leafed,
+      stemReveal: _revealFor(grown),
+      branches: branches,
     );
   }
 
-  /// Even a near-zero season shows a sliver of growth, rather than reading as
-  /// if the state image failed to load.
-  static const _minReveal = 0.12;
+  /// The stem shows up to a little above its newest branch (all of it once
+  /// the sixth has grown); [beforeBranch] stops it below the first branch.
+  static double _revealFor(int grown, {bool beforeBranch = false}) {
+    if (!beforeBranch && grown >= 6) return 1.0;
+    // Day one: a young shoot about a quarter of the way up, past where the
+    // first branch will come.
+    final top = beforeBranch ? 1850.0 : _attachY[grown - 1] - 300;
+    return ((_canvasHeight - top) / _canvasHeight).clamp(0.0, 1.0);
+  }
 
-  Widget _layer(TrellisState layerState) => TrimmedAsset(
-        asset: layerState.asset,
-        imageSize: layerState.imageSize,
-        content: _contentFor(layerState),
+  @override
+  bool operator ==(Object other) =>
+      other is VineScene &&
+      other.stem == stem &&
+      other.stemReveal == stemReveal &&
+      _listEquals(other.branches, branches);
+
+  @override
+  int get hashCode => Object.hash(stem, stemReveal, Object.hashAll(branches));
+
+  static bool _listEquals(List<VinePartState> a, List<VinePartState> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  String toString() => 'VineScene(stem: ${stem.name} ${stemReveal.toStringAsFixed(2)}, '
+      'branches: ${branches.map((b) => b.name).join(', ')})';
+}
+
+/// How the vine's own colours sit against the brass trellis. The art is drawn
+/// in green leaves and purple grapes; [muted] warms and softens them toward
+/// the app's parchment-and-brass palette while keeping healthy and withered
+/// easy to tell apart; [sepia] tones everything to brass and bronze like the
+/// rest of the woodcuts; [original] leaves the art as drawn.
+enum VineTone { original, muted, sepia }
+
+/// Whole days from [since] to now (never negative), or null when unknown —
+/// the vine's season age, from the day the Rule of Life was committed.
+int? daysSince(DateTime? since, [DateTime? now]) {
+  if (since == null) return null;
+  final days = (now ?? DateTime.now()).difference(since).inDays;
+  return days < 0 ? 0 : days;
+}
+
+/// The tone the app uses. One line to change.
+const VineTone vineTone = VineTone.muted;
+
+/// The colour matrix for [tone]: luminance mapped from deep bronze to
+/// parchment, blended with the original colour by how much is kept.
+ColorFilter? vineToneFilter(VineTone tone) {
+  final keep = switch (tone) {
+    VineTone.original => null,
+    VineTone.muted => 0.35,
+    VineTone.sepia => 0.0,
+  };
+  if (keep == null) return null;
+  const dark = [52.0, 36.0, 14.0];
+  const light = [246.0, 232.0, 198.0];
+  const luma = [0.299, 0.587, 0.114];
+  final matrix = <double>[];
+  for (var c = 0; c < 3; c++) {
+    final span = light[c] - dark[c];
+    for (var k = 0; k < 3; k++) {
+      matrix.add(span * luma[k] / 255 * (1 - keep) + (k == c ? keep : 0));
+    }
+    matrix.addAll([0, dark[c] * (1 - keep)]);
+  }
+  matrix.addAll([0, 0, 0, 1, 0]);
+  return ColorFilter.matrix(matrix);
+}
+
+/// The trellis with its vine: the bare wooden trellis, and over it the stem
+/// (revealed from the bottom as the season grows) and each branch in its
+/// current condition. A change of scene crossfades each part on its own — a
+/// branch coming into fruit, another withering — and the stem climbs.
+class TrellisVisual extends StatelessWidget {
+  const TrellisVisual({super.key, required this.scene, this.height = 280, this.tone = vineTone});
+
+  final VineScene scene;
+  final double height;
+
+  /// How the vine is coloured; the app-wide [vineTone] unless a caller (a
+  /// side-by-side comparison, say) asks for another.
+  final VineTone tone;
+
+  /// The trellis frame's region of the shared 1696 x 2528 canvas, as a
+  /// fraction, so every layer (whatever its export size) lands on the wood.
+  static const _frame = Rect.fromLTRB(120 / 1696, 36 / 2528, 1578 / 1696, 2442 / 2528);
+
+  static const _trellisSize = Size(1696, 2528);
+  static const _vineSize = Size(848, 1264);
+  static const _fade = Duration(milliseconds: 600);
+
+  static Rect _content(Size size) => Rect.fromLTRB(
+        _frame.left * size.width,
+        _frame.top * size.height,
+        _frame.right * size.width,
+        _frame.bottom * size.height,
+      );
+
+  Widget _picture(String asset, Size size) => TrimmedAsset(
+        asset: asset,
+        imageSize: size,
+        content: _content(size),
         height: height,
         cacheWidth: 700,
       );
 
+  static String _vineAsset(String part, VinePartState state) =>
+      'assets/images/vine/vine_${part}_${state.name}.png';
+
+  Widget _branch(int number, VinePartState state) => AnimatedSwitcher(
+        duration: _fade,
+        child: state == VinePartState.hidden
+            ? SizedBox(key: ValueKey('b$number-hidden'), height: height)
+            : KeyedSubtree(
+                key: ValueKey('b$number-${state.name}'),
+                child: _picture(_vineAsset('branch_$number', state), _vineSize),
+              ),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final target = reveal.clamp(_minReveal, 1.0);
+    final filter = vineToneFilter(tone);
+    final vine = Stack(
+      alignment: Alignment.bottomCenter,
+      children: [
+        // The stem, climbing: shown from the bottom up to its reveal, its
+        // top dissolving rather than ending in a straight cut.
+        TweenAnimationBuilder<double>(
+          tween: Tween(end: scene.stemReveal),
+          duration: const Duration(milliseconds: 900),
+          curve: Curves.easeOutCubic,
+          builder: (context, factor, child) => ClipRect(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              heightFactor: factor,
+              child: factor >= 0.999
+                  ? child
+                  : ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (bounds) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x00000000), Color(0xFF000000)],
+                        stops: [0.0, 0.08],
+                      ).createShader(bounds),
+                      child: child,
+                    ),
+            ),
+          ),
+          child: AnimatedSwitcher(
+            duration: _fade,
+            child: KeyedSubtree(
+              key: ValueKey('stem-${scene.stem.name}'),
+              child: _picture(_vineAsset('stem', scene.stem), _vineSize),
+            ),
+          ),
+        ),
+        // Branches over the stem, lowest first (1 and 4 loop in front of it).
+        for (var i = 0; i < 6; i++) _branch(i + 1, scene.branches[i]),
+      ],
+    );
 
     return SizedBox(
       height: height,
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Stack(
+          alignment: Alignment.bottomCenter,
           children: [
-            // Bottom layer: the bare wooden trellis, always 100% visible.
-            _layer(TrellisState.empty),
-            // Top layer: the current state's vine, revealed from the bottom.
-            if (state != TrellisState.empty)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(end: target),
-                  duration: const Duration(milliseconds: 700),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, factor, child) => ClipRect(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      heightFactor: factor,
-                      // The vine's upper edge dissolves over its top tenth
-                      // rather than ending in a straight cut through the
-                      // leaves — growth tapering off, not a hedge trimmer.
-                      child: ShaderMask(
-                        blendMode: BlendMode.dstIn,
-                        shaderCallback: (bounds) => const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Color(0x00000000), Color(0xFF000000)],
-                          stops: [0.0, 0.12],
-                        ).createShader(bounds),
-                        child: child,
-                      ),
-                    ),
-                  ),
-                  child: _layer(state),
-                ),
+            // The bare wooden trellis, always whole.
+            _picture('assets/images/trellis_empty.png', _trellisSize),
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: filter == null ? vine : ColorFiltered(colorFilter: filter, child: vine),
               ),
+            ),
           ],
         ),
       ),
@@ -147,7 +310,8 @@ class TrellisVisual extends StatelessWidget {
 /// historical; it is never shown); [isDrooping] is true
 /// when an Anchor Rhythm has been missed three times in a row; [hasData] is
 /// false for a Runner with no check-ins yet, which shows the empty trellis
-/// and a single line of encouragement — no score, no warnings.
+/// and a single line of encouragement — no score, no warnings. The vine itself
+/// is assembled piece by piece (see [VineScene]).
 class VineVisualizerCard extends StatelessWidget {
   const VineVisualizerCard({
     super.key,
@@ -156,7 +320,12 @@ class VineVisualizerCard extends StatelessWidget {
     this.hasData = true,
     this.showTitle = true,
     this.emptyCaption = 'Stick to Your Rule and Watch Yourself Grow',
+    this.seasonDays,
   });
+
+  /// Days since the Rule of Life was committed — how far the vine has grown
+  /// (see [VineScene.of]). Null shows it fully grown.
+  final int? seasonDays;
 
   final double vitalityScore;
   final bool isDrooping;
@@ -175,10 +344,11 @@ class VineVisualizerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final state = TrellisState.of(
+    final scene = VineScene.of(
       hasData: hasData,
       consistency: vitalityScore,
       isDrooping: isDrooping,
+      seasonDays: seasonDays,
     );
 
     // A plain container with exactly the parchment look this card has always
@@ -205,7 +375,7 @@ class VineVisualizerCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
           ],
-          TrellisVisual(state: state, reveal: vitalityScore),
+          TrellisVisual(scene: scene),
           const SizedBox(height: 12),
           if (!hasData)
             Text(
@@ -250,12 +420,7 @@ class VineGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TrellisVisual(
-      state: TrellisState.of(
-        hasData: hasData,
-        consistency: vitalityScore,
-        isDrooping: isDrooping,
-      ),
-      reveal: vitalityScore,
+      scene: VineScene.of(hasData: hasData, consistency: vitalityScore, isDrooping: isDrooping),
       height: height,
     );
   }
