@@ -9,6 +9,7 @@ import '../../models/support_request.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_dialog.dart';
 import '../../widgets/bookplate_tabs.dart';
+import '../../widgets/getting_started_plate.dart';
 import '../../widgets/vine_visualizer.dart';
 
 /// Below this share of scheduled days a rhythm reads as needing care; at or
@@ -47,8 +48,19 @@ class DashboardScreen extends StatelessWidget {
         final insights = hasData ? _buildInsights(items, analytics) : const <_Insight>[];
         final couldNotLoad = profile.analyticsFailed && !profile.analyticsLoaded;
 
+        // A new Runner's next step comes first, until all three are done
+        // (and only once their data has loaded — "no Witness yet" isn't true
+        // until it has).
+        final showGettingStarted =
+            profile.isRunnerDataLoaded && GettingStartedPlate.isNeeded(profile);
+
         return CustomScrollView(
           slivers: [
+            if (showGettingStarted)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                sliver: SliverToBoxAdapter(child: GettingStartedPlate(profile: profile)),
+              ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
               sliver: SliverToBoxAdapter(

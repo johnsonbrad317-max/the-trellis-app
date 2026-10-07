@@ -351,8 +351,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
             Text('Share Your Calendar', style: textTheme.titleMedium),
             const SizedBox(height: 2),
             Text(
-              "The calendars already on this phone. Busy or free only — no event details "
-              'are shared.',
+              "Busy or free only — no event details are shared. Only calendars synced to "
+              "this phone's Calendar app are seen; one that lives only in the Outlook or "
+              'Gmail app is not.',
               style: textTheme.bodySmall,
             ),
             const SizedBox(height: 8),

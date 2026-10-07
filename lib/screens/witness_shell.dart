@@ -10,6 +10,7 @@ import '../widgets/settings_drawer.dart';
 import '../widgets/bottom_vine_frame.dart';
 import '../widgets/vine_frame.dart';
 import '../widgets/brass_glyph.dart';
+import '../widgets/departure_notice.dart';
 import '../widgets/feedback_dialog.dart';
 import '../widgets/nav_icon.dart';
 import '../widgets/vine_safe_app_bar.dart';
@@ -71,6 +72,24 @@ class _WitnessShellState extends State<WitnessShell>
     // and until it lands — or if it fails — the dashboard would otherwise say
     // "No Runners yet" to a Witness who has Runners.
     runShellLoad(_profile.loadWitnessData);
+    // "A Runner you walk with has left" notes (028) arrive with the Witness
+    // load, or later; each is shown once, over whatever tab is open.
+    _profile.addListener(_onProfileChanged);
+    _onProfileChanged();
+  }
+
+  @override
+  void dispose() {
+    _profile.removeListener(_onProfileChanged);
+    super.dispose();
+  }
+
+  void _onProfileChanged() {
+    if (_profile.isPreview || _profile.pendingWitnessNotices.isEmpty) return;
+    // Never open a dialog in the middle of a build or a notification.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) showPendingDepartureNotices(context, _profile);
+    });
   }
 
   @override

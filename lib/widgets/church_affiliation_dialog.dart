@@ -15,9 +15,20 @@ import 'bookplate_dialog.dart';
 /// Joining shares the Runner's rolled-up consistency with church leadership,
 /// so the Tier 2 sharing consent screen must be accepted before any code is
 /// redeemed. Resolves to true if the Runner joined a church.
-Future<bool> showChurchAffiliationDialog(BuildContext context, RunnerProfile profile) async {
+///
+/// With [acceptMembershipCodes] (the "two free weeks are over" page), the
+/// field also takes an organization's membership code
+/// (`redeem_enterprise_church_code`, migration 005): that is tried first —
+/// it shares nothing with anyone, so it needs no consent — and only a code it
+/// doesn't recognize goes on to the church-joining path above. Resolves to
+/// true for either.
+Future<bool> showChurchAffiliationDialog(
+  BuildContext context,
+  RunnerProfile profile, {
+  bool acceptMembershipCodes = false,
+}) async {
   final controller = TextEditingController();
-  final locked = profile.isChurchAffiliationLocked;
+  final locked = profile.isChurchAffiliationLocked && !acceptMembershipCodes;
   var isBusy = false;
   String? error;
   // Set by the actions builder so the text field's keyboard action (built in
@@ -27,11 +38,13 @@ Future<bool> showChurchAffiliationDialog(BuildContext context, RunnerProfile pro
   try {
     final joined = await showBookplateForm<bool>(
       context,
-      title: 'Church Affiliation',
+      title: acceptMembershipCodes ? 'Church or Organization Code' : 'Church Affiliation',
       message: locked
           ? null
-          : 'Joined through a church? Enter the code they gave you to connect to your '
-              "church's rhythms.",
+          : acceptMembershipCodes
+              ? 'Enter the code your church or organization gave you.'
+              : 'Joined through a church? Enter the code they gave you to connect to your '
+                  "church's rhythms.",
       barrierLabel: locked ? 'Close' : 'Cancel',
       bodyBuilder: (bodyContext, setState) {
         final textTheme = Theme.of(bodyContext).textTheme;
@@ -65,7 +78,9 @@ Future<bool> showChurchAffiliationDialog(BuildContext context, RunnerProfile pro
               autofocus: true,
               enabled: !isBusy,
               textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(labelText: 'Church-Gifted Code'),
+              decoration: InputDecoration(
+                labelText: acceptMembershipCodes ? 'Code' : 'Church-Gifted Code',
+              ),
               onSubmitted: (_) => joinAction?.call(),
             ),
             if (error != null) ...[
@@ -86,6 +101,36 @@ Future<bool> showChurchAffiliationDialog(BuildContext context, RunnerProfile pro
             return;
           }
           if (isBusy) return;
+
+          if (acceptMembershipCodes) {
+            setState(() {
+              isBusy = true;
+              error = null;
+            });
+            try {
+              final unlocked = await profile.redeemEnterpriseChurchCode(code);
+              if (!dialogContext.mounted) return;
+              if (unlocked) {
+                Navigator.of(dialogContext).pop(true);
+                return;
+              }
+            } catch (_) {
+              if (!dialogContext.mounted) return;
+              setState(() {
+                isBusy = false;
+                error = "Couldn't reach The Trellis to check that code. Try again.";
+              });
+              return;
+            }
+            setState(() => isBusy = false);
+            // Not an organization's membership code. It may still be a
+            // church's invitation, which joins the church (consent first) —
+            // unless this account already belongs to one.
+            if (profile.isChurchAffiliationLocked) {
+              setState(() => error = "That code wasn't recognized, or it has already been used.");
+              return;
+            }
+          }
 
           final consented = await Navigator.of(dialogContext).push<bool>(
             MaterialPageRoute(builder: (context) => const ChurchDataSharingConsentScreen()),

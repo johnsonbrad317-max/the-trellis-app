@@ -21,6 +21,7 @@ import 'cloud_triage.dart';
 import 'dna_rhythm.dart';
 import 'meeting_proposal_engine.dart';
 import 'meeting_request.dart';
+import 'membership_gate.dart';
 import 'pairing_code_preview.dart';
 import 'pending_unlock_request.dart';
 import 'prayer_item.dart';
@@ -33,6 +34,7 @@ import 'user_role.dart';
 import 'watched_prayer_item.dart';
 import 'watched_runner.dart';
 import 'witness.dart';
+import 'witness_notice.dart';
 
 enum MembershipStatus { trial, active, cancelled }
 
@@ -297,6 +299,9 @@ class RunnerProfile extends ChangeNotifier {
       pendingUnlockRuleItemIds: {},
       incomingUnlockRequests: [],
     );
+    // Before the first screen is built, so a gated Runner never glimpses the
+    // shell behind the gate. Never throws (see refreshMembership).
+    await profile.refreshMembership();
     current = profile;
     return profile;
   }
@@ -829,6 +834,9 @@ class RunnerProfile extends ChangeNotifier {
   Future<void> loadWitnessData() {
     if (_witnessDataLoaded || isPreview) return Future<void>.value();
     return _witnessDataLoad ??= () async {
+      // Departure notes (028) ride along with every Witness load, on their
+      // own and fail-soft: they never hold up or fail the Runners list.
+      unawaited(refreshWitnessNotices());
       try {
         await _fetchWitnessData();
         _witnessDataLoaded = true;
@@ -1033,6 +1041,12 @@ class RunnerProfile extends ChangeNotifier {
     watchedRunners
       ..clear()
       ..addAll(built);
+    // A selected Runner whose pairing has since ended (or whose account was
+    // deleted) is no longer in the list — fall back to the first one.
+    final previouslySelected = selectedRunnerId;
+    if (previouslySelected != null && _findWatchedRunner(previouslySelected) == null) {
+      selectedRunnerId = null;
+    }
     selectedRunnerId ??= watchedRunners.isEmpty ? null : watchedRunners.first.id;
 
     final graceRows = await supabase
@@ -1504,6 +1518,7 @@ class RunnerProfile extends ChangeNotifier {
 
     membershipStatus = MembershipStatus.active;
     notifyListeners();
+    await refreshMembership();
     return true;
   }
 
@@ -1513,6 +1528,9 @@ class RunnerProfile extends ChangeNotifier {
   /// revenuecat-webhook/) and will reconcile this shortly after regardless.
   void applyLocalMembershipStatus(MembershipStatus status) {
     membershipStatus = status;
+    // A purchase just went through: lift the membership gate for this run of
+    // the app even if the webhook hasn't reached the server yet.
+    if (status == MembershipStatus.active) _membershipUnlockedLocally = true;
     notifyListeners();
   }
 
@@ -2237,6 +2255,8 @@ class RunnerProfile extends ChangeNotifier {
 
     notifyListeners();
     unawaited(refreshAnalytics());
+    // A church member holds one of the church's seats (migration 029).
+    unawaited(refreshMembership());
     return true;
   }
 
@@ -2535,6 +2555,153 @@ class RunnerProfile extends ChangeNotifier {
   void _refuseInPreview() {
     if (isPreview) throw const PreviewModeException();
   }
+
+  // ---------------------------------------------------------------------
+  // Membership gate (supabase/migrations/029_membership_gate.sql)
+  // ---------------------------------------------------------------------
+
+  /// What `my_membership()` last said. [MembershipGate.notEnforced] until it
+  /// has been read, in a preview, and whenever it can't be read — the gate
+  /// never closes on a failure.
+  MembershipGate membershipGate = MembershipGate.notEnforced;
+
+  /// Set once a store purchase/restore succeeds in this run of the app, so
+  /// the gate lifts at once rather than waiting on the RevenueCat webhook.
+  bool _membershipUnlockedLocally = false;
+
+  /// Whether the Runner view must show the "two free weeks are over" page
+  /// instead of the Runner's tabs. Only ever true for [UserRole.runner], and
+  /// only once `app_settings.enforce_membership` is switched on at launch.
+  /// The Witness and Cloud views never consult it.
+  bool get needsMembership => !_membershipUnlockedLocally && membershipGate.gates(role);
+
+  /// When the free trial ends (or ended); null if not known.
+  DateTime? get trialEndsAt => membershipGate.trialEndsAt;
+
+  /// The free trial is running and should be described as such. Always false
+  /// while the launch switch is off.
+  bool get isTrialPeriod => membershipGate.isTrialPeriodAt(DateTime.now());
+
+  /// Re-reads `my_membership()`. Never throws: if the RPC is missing (029 not
+  /// applied) or unreachable, the last answer stands — which, before any
+  /// answer, is "not enforced".
+  Future<void> refreshMembership() async {
+    if (isPreview) return;
+    try {
+      membershipGate = MembershipGate.fromJson(await supabase.rpc('my_membership'));
+    } catch (error) {
+      debugPrint('my_membership unavailable: ${error.runtimeType}');
+      return;
+    }
+    notifyListeners();
+  }
+
+  /// Redeems a gift code bought on unhinderedlives.com (`redeem_gift_code`,
+  /// migration 029): single use, ignores case/spaces/dashes, adds the gift's
+  /// months to this account and marks the membership active. Throws only if
+  /// the server can't be reached.
+  Future<GiftCodeRedemption> redeemGiftCode(String code) async {
+    _refuseInPreview();
+    final normalized = normalizeGiftCode(code);
+    if (normalized.isEmpty) return const GiftCodeRedemption.notRecognized();
+
+    final result = GiftCodeRedemption.fromJson(
+      await supabase.rpc('redeem_gift_code', params: {'p_code': normalized}),
+    );
+    if (result.ok) {
+      membershipStatus = MembershipStatus.active;
+      await refreshMembership();
+      notifyListeners();
+    }
+    return result;
+  }
+
+  // ---------------------------------------------------------------------
+  // Departure notes for a Witness (supabase/migrations/028_departure_notices.sql)
+  // ---------------------------------------------------------------------
+
+  final List<WitnessNotice> _witnessNotices = [];
+
+  /// Ids already handed to the screen (shown or being shown) this session, so
+  /// a refetch that lands before `mark_witness_notice_seen` does can never
+  /// bring the same note back a second time.
+  final Set<String> _handledWitnessNoticeIds = {};
+
+  /// Unseen notes for this account as a Witness — today only "a Runner you
+  /// walked with deleted their account" — oldest first, in the order the
+  /// Witness shell shows them. Always empty for a preview profile.
+  List<WitnessNotice> get pendingWitnessNotices =>
+      isPreview ? const [] : List.unmodifiable(_witnessNotices);
+
+  /// Fetches this account's unseen notes (`get_my_witness_notices`). Called
+  /// with every [loadWitnessData] and when a tapped `account_deleted` push
+  /// opens the Witness shell. Never throws: a failure — including a database
+  /// without migration 028 — leaves the list as it was.
+  Future<void> refreshWitnessNotices() async {
+    if (isPreview) return;
+    try {
+      final rows = await supabase.rpc('get_my_witness_notices') as List<dynamic>;
+      final fresh = <WitnessNotice>[
+        for (final row in rows)
+          if (row is Map<String, dynamic>) ?WitnessNotice.fromRow(row),
+      ]
+        ..removeWhere((notice) => _handledWitnessNoticeIds.contains(notice.id))
+        // The server sends newest first; show the oldest first.
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _witnessNotices
+        ..clear()
+        ..addAll(fresh);
+      notifyListeners();
+    } catch (error) {
+      debugPrint('get_my_witness_notices unavailable: ${error.runtimeType}');
+    }
+  }
+
+  /// Takes [notice] off [pendingWitnessNotices] for good this session, before
+  /// it is shown — so it is shown once even if a rebuild or a second shell
+  /// asks again while the dialog is up.
+  void claimWitnessNotice(WitnessNotice notice) {
+    _handledWitnessNoticeIds.add(notice.id);
+    _witnessNotices.removeWhere((n) => n.id == notice.id);
+  }
+
+  /// The Witness has read [notice] (`mark_witness_notice_seen`). Best effort:
+  /// if it fails the note is still gone for this session and will simply be
+  /// shown again on a later launch. Nothing is sent for a preview profile.
+  Future<void> markWitnessNoticeSeen(WitnessNotice notice) async {
+    claimWitnessNotice(notice);
+    if (isPreview) return;
+    try {
+      await supabase.rpc('mark_witness_notice_seen', params: {'p_id': notice.id});
+    } catch (error) {
+      debugPrint('mark_witness_notice_seen failed: ${error.runtimeType}');
+    }
+  }
+
+  /// A Runner this account walks with has left (a tapped `account_deleted`
+  /// push, carrying their id as [departedRunnerId]): their pairing is already
+  /// gone, so they are dropped from [watchedRunners] (and the selection) at
+  /// once, and the next [loadWitnessData] fetches the list afresh — which also
+  /// fetches the departure note.
+  void markWitnessDataStale({String? departedRunnerId}) {
+    if (isPreview) return;
+    _witnessDataLoaded = false;
+    // A load already under way may have asked for notes before this one was
+    // written; ask again rather than wait for the next launch.
+    if (_witnessDataLoad != null) unawaited(refreshWitnessNotices());
+    if (departedRunnerId != null) {
+      watchedRunners.removeWhere((runner) => runner.id == departedRunnerId);
+      if (selectedRunnerId == departedRunnerId) {
+        selectedRunnerId = watchedRunners.isEmpty ? null : watchedRunners.first.id;
+      }
+      notifyListeners();
+    }
+  }
+
+  /// Test hook: puts [notice] on a profile's pending list (a preview profile
+  /// still never reports it — see [pendingWitnessNotices]).
+  @visibleForTesting
+  void debugAddWitnessNotice(WitnessNotice notice) => _witnessNotices.add(notice);
 }
 
 /// Thrown by a [RunnerProfile] write attempted on a preview profile

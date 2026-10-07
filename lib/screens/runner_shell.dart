@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/runner_profile.dart';
+import '../models/user_role.dart';
 import 'runner/account_settings_screen.dart';
+import 'runner/membership_gate_page.dart';
+import 'witness_shell.dart';
 import 'runner/rule_builder_screen.dart' show SeasonReopenPlate;
 import '../services/reminder_sync.dart';
 import '../theme/app_colors.dart';
@@ -96,7 +99,7 @@ class _RunnerShellState extends State<RunnerShell>
   /// A season of the Rule of Life has ended: say so once, with the way to the
   /// Rule of Life screen, where the same words stay on a plate all week.
   Future<void> _announceSeasonReopen() async {
-    if (!mounted) return;
+    if (!mounted || _profile.needsMembership) return;
     final endsAt = _profile.ruleSeasonReopenEndsAt;
     if (endsAt == null || _seasonReopenAnnounced == endsAt) return;
     _seasonReopenAnnounced = endsAt;
@@ -116,11 +119,24 @@ class _RunnerShellState extends State<RunnerShell>
     super.dispose();
   }
 
+  /// "Witnessing is always free" on the membership gate: the same move as
+  /// choosing Witness in the role switcher.
+  void _switchToWitness() {
+    _profile.setRole(UserRole.witness);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => WitnessShell(profile: _profile)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _profile,
       builder: (context, _) {
+        // Never true until memberships are switched on at launch (migration
+        // 029), and only ever for this Runner view — the Witness and Cloud
+        // shells have no gate.
+        final gated = _profile.needsMembership;
         final pages = [
           DashboardTab(profile: _profile),
           RuleOfLifeTab(profile: _profile),
@@ -149,11 +165,12 @@ class _RunnerShellState extends State<RunnerShell>
               actions: shellAppBarActions(
                 context,
                 actions: [
-                  ShellAction(
-                    glyph: BrassGlyphKind.personAdd,
-                    label: 'Generate Witness Code',
-                    onPressed: () => showWitnessCodeDialog(context, _profile),
-                  ),
+                  if (!gated)
+                    ShellAction(
+                      glyph: BrassGlyphKind.personAdd,
+                      label: 'Generate Witness Code',
+                      onPressed: () => showWitnessCodeDialog(context, _profile),
+                    ),
                   ShellAction(
                     glyph: BrassGlyphKind.leaf,
                     label: 'Send Feedback',
@@ -166,40 +183,44 @@ class _RunnerShellState extends State<RunnerShell>
                 ),
               ),
             ),
-            child: Column(
-              children: [
-                if (shellLoadFailed)
-                  ShellLoadFailedPlate(
-                    message:
-                        "Couldn't load your Witnesses, prayers and meetings, so they "
-                        'look empty below. Check your connection and try again.',
-                    onRetry: () => runShellLoad(_profile.loadRunnerData),
-                  )
-                else if (shellLoadingVisible)
-                  const ShellLoadingLine(
-                    label: 'Loading your Witnesses, prayers and meetings…',
+            child: gated
+                ? MembershipGatePage(profile: _profile, onSwitchToWitness: _switchToWitness)
+                : Column(
+                    children: [
+                      if (shellLoadFailed)
+                        ShellLoadFailedPlate(
+                          message:
+                              "Couldn't load your Witnesses, prayers and meetings, so they "
+                              'look empty below. Check your connection and try again.',
+                          onRetry: () => runShellLoad(_profile.loadRunnerData),
+                        )
+                      else if (shellLoadingVisible)
+                        const ShellLoadingLine(
+                          label: 'Loading your Witnesses, prayers and meetings…',
+                        ),
+                      // Shown only once the profile is loaded and has no number.
+                      if (_profile.phoneNumber == null && !shellLoadPending)
+                        MissingPhonePlate(
+                          onAdd: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => AccountSettingsScreen(profile: _profile),
+                            ),
+                          ),
+                        ),
+                      Expanded(child: pages[_tabIndex]),
+                    ],
                   ),
-                // Shown only once the profile is loaded and has no number.
-                if (_profile.phoneNumber == null && !shellLoadPending)
-                  MissingPhonePlate(
-                    onAdd: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => AccountSettingsScreen(profile: _profile),
-                      ),
-                    ),
+          ),
+          bottomNavigationBar: gated
+              ? null
+              : BottomVineFrame(
+                  child: BottomNavigationBar(
+                    backgroundColor: Colors.transparent,
+                    currentIndex: _tabIndex,
+                    onTap: (index) => setState(() => _tabIndex = index),
+                    items: _navItems,
                   ),
-                Expanded(child: pages[_tabIndex]),
-              ],
-            ),
-          ),
-          bottomNavigationBar: BottomVineFrame(
-            child: BottomNavigationBar(
-              backgroundColor: Colors.transparent,
-              currentIndex: _tabIndex,
-              onTap: (index) => setState(() => _tabIndex = index),
-              items: _navItems,
-            ),
-          ),
+                ),
         );
       },
     );

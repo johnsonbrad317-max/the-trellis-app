@@ -14,8 +14,9 @@
 --
 --   A. profiles.last_seen_at — when the person last opened the app — and
 --      profiles.app_removed_at — when their phone's push token was reported
---      gone (the app was probably deleted). Clients can read both and write
---      neither.
+--      gone (the app was probably deleted). PRIVATE: no client can read or
+--      write either one — not the person, not their Witnesses, not their
+--      church's Cloud admin. Only the server's own functions use them.
 --
 --   B. touch_last_seen() — the app calls it on launch, sign-in and every return
 --      to the foreground. Records "seen now" and clears app_removed_at. Cheap:
@@ -93,10 +94,16 @@ comment on column public.profiles.app_removed_at is
   'the app is opened. Never written by a client.';
 
 -- A.2  011 grants profiles column by column, so new columns are invisible until
---      granted. Read yes, write no — the same shape as rule_committed_at (021 B)
---      and calendar_synced_at (025 B). Who can see WHICH rows is unchanged (the
---      person themselves, their Witnesses, their church's Cloud admin).
-grant select (last_seen_at, app_removed_at) on public.profiles to authenticated;
+--      granted — and these two are never granted. A Witness or a church leader
+--      has no need to know when a Runner last opened the app (the owner's
+--      decision), and the person themselves never reads it either; the nudges
+--      in C-E are worked out on the server. Revoked explicitly, so a database
+--      where an earlier draft of this file granted SELECT is put right by a
+--      re-run (028 repeats the revoke for the same reason). Same shape as
+--      027's private map points.
+revoke select (last_seen_at, app_removed_at),
+       update (last_seen_at, app_removed_at)
+  on public.profiles from anon, authenticated;
 
 -- A.3  Layer 2 for the missing UPDATE grant (the two-layer rule from 011): a
 --      small invoker-rights trigger of its own, like 025's
@@ -624,7 +631,7 @@ comment on column public.profiles.notification_preferences is
 --   (not directly callable)
 --   table                         witness_nudges: nobody but service_role
 --   columns                       profiles.last_seen_at, app_removed_at:
---                                 clients read, never write
+--                                 clients neither read nor write (A.2)
 revoke execute on function public.touch_last_seen()                   from public, anon;
 grant  execute on function public.touch_last_seen()                   to authenticated;
 revoke execute on function public.generate_witness_nudges()           from public, anon, authenticated;
@@ -659,8 +666,8 @@ grant  all on public.witness_nudges to service_role;
 --    false, false, true     request_presence_probe
 --    false, false, true     witness_nudges SELECT: no client; service role yes
 --    false, false           witness_nudges INSERT for anon / authenticated
---    true,  false           last_seen_at: clients read, cannot write
---    true,  false           app_removed_at: clients read, cannot write
+--    false, false           last_seen_at: clients cannot read or write
+--    false, false           app_removed_at: clients cannot read or write
 --
 --   select has_function_privilege('anon',          'public.touch_last_seen()', 'execute'),
 --          has_function_privilege('authenticated', 'public.touch_last_seen()', 'execute'),
@@ -721,14 +728,23 @@ grant  all on public.witness_nudges to service_role;
 --   set local role authenticated;
 --   select set_config('request.jwt.claims', '{"sub":"<runner-uuid>","role":"authenticated"}', true);
 --   select public.touch_last_seen();
---   select last_seen_at, app_removed_at from public.profiles where id = auth.uid();
+--   reset role;                     -- back to the editor: clients cannot read these columns
+--   select last_seen_at, app_removed_at from public.profiles where id = '<runner-uuid>';
+--   set local role authenticated;
 --   select public.touch_last_seen();
---   select last_seen_at from public.profiles where id = auth.uid();   -- same value as above
+--   reset role;
+--   select last_seen_at from public.profiles where id = '<runner-uuid>';   -- same value as above
 --   rollback;
 --
 --   begin; set local role authenticated;
 --   select set_config('request.jwt.claims', '{"sub":"<runner-uuid>","role":"authenticated"}', true);
 --   update public.profiles set last_seen_at = now() - interval '30 days' where id = auth.uid();   -- ERROR 42501
+--   rollback;
+--
+--   Nor can a client READ them — not even their own (expect ERROR 42501):
+--   begin; set local role authenticated;
+--   select set_config('request.jwt.claims', '{"sub":"<runner-uuid>","role":"authenticated"}', true);
+--   select last_seen_at from public.profiles where id = auth.uid();
 --   rollback;
 --
 --   Not signed in (expect ERROR 28000):

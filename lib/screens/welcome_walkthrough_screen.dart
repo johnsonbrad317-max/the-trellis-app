@@ -459,104 +459,82 @@ class WelcomeSlideView extends StatelessWidget {
           builder: (context, constraints) {
             final plateHeight = constraints.maxHeight;
             // Screens are the point of their slides and get most of the
-            // plate; a book or a list needs less.
+            // plate; a book less. Everything on the slide — picture and words
+            // together — is then centred on the plate, so a short slide
+            // doesn't leave its bottom half empty.
             final share = switch (slide.art) {
-              WelcomeArt.screenshots => plateHeight < 420 ? 0.46 : 0.56,
+              WelcomeArt.screenshots => plateHeight < 420 ? 0.48 : 0.60,
               WelcomeArt.ruleCard => plateHeight < 340 ? 0.30 : 0.38,
               WelcomeArt.lines || WelcomeArt.roleChoice => 0.0,
             };
-            final artHeight = share == 0 ? 0.0 : (plateHeight * share).clamp(80.0, 380.0);
-            final kickerText = Text(
-              slide.kicker,
-              style: textTheme.labelMedium?.copyWith(
-                color: AppColors.antiqueBrass,
-                letterSpacing: 2.4,
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            );
+            final artHeight = share == 0 ? 0.0 : (plateHeight * share).clamp(80.0, 470.0);
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (artHeight > 0) ...[
-                  SizedBox(
-                    height: artHeight,
-                    child: Center(child: _art(artHeight)),
-                  ),
-                  const SizedBox(height: 12),
-                ] else
-                  const SizedBox(height: 6),
-                // With a picture the kicker sits under it; without one it moves
-                // into the centred words below.
-                if (artHeight > 0) ...[kickerText, const SizedBox(height: 6)],
-                // The headline scrolls with the words: on a small phone at a
-                // large text size a long headline can run to four lines, and
-                // fixed in place it pushed the words off the plate.
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, area) => SingleChildScrollView(
-                      child: ConstrainedBox(
-                        // A slide with no picture sits in the middle of its
-                        // plate rather than leaving the bottom half empty.
-                        constraints: BoxConstraints(minHeight: artHeight > 0 ? 0 : area.maxHeight),
-                        child: Column(
-                          mainAxisAlignment: artHeight > 0
-                              ? MainAxisAlignment.start
-                              : MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (artHeight == 0) ...[kickerText, const SizedBox(height: 6)],
-                            Text(
-                              slide.headline,
-                              style: textTheme.headlineSmall,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 10),
-                            if (slide.body != null)
-                              Text(
-                                slide.body!,
-                                style: slide.isScripture
-                                    ? bodyStyle?.copyWith(fontStyle: FontStyle.italic)
-                                    : bodyStyle,
-                                textAlign: TextAlign.center,
-                                textScaler: _bodyScaler(context, slide.body!),
-                              ),
-                            for (var i = 0; i < slide.lines.length; i++) ...[
-                              SizedBox(height: i == 0 ? 6 : 14),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2),
-                                    child: BrassGlyph(
-                                      slide.lines[i].glyph,
-                                      size: 20,
-                                      color: AppColors.antiqueBrass,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(child: Text(slide.lines[i].text, style: bodyStyle)),
-                                ],
-                              ),
-                            ],
-                            if (slide.art == WelcomeArt.roleChoice && onRoleChosen != null) ...[
-                              const SizedBox(height: 16),
-                              for (final choice in _roleChoices) ...[
-                                _RoleChoice(
-                                  choice: choice,
-                                  onTap: () => onRoleChosen!(choice.role),
-                                ),
-                                const SizedBox(height: 10),
-                              ],
-                            ],
-                          ],
-                        ),
+            return SingleChildScrollView(
+              // Scrolls only when a small phone or a large text size leaves
+              // the slide no other room.
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: plateHeight),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (artHeight > 0) ...[
+                      SizedBox(height: artHeight, child: Center(child: _art(artHeight))),
+                      const SizedBox(height: 16),
+                    ],
+                    Text(
+                      slide.kicker,
+                      style: textTheme.labelMedium?.copyWith(
+                        color: AppColors.antiqueBrass,
+                        letterSpacing: 2.4,
+                        fontWeight: FontWeight.w600,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    Text(
+                      slide.headline,
+                      style: textTheme.headlineSmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    if (slide.body != null)
+                      Text(
+                        slide.body!,
+                        style: slide.isScripture
+                            ? bodyStyle?.copyWith(fontStyle: FontStyle.italic)
+                            : bodyStyle,
+                        textAlign: TextAlign.center,
+                        textScaler: _bodyScaler(context, slide.body!),
+                      ),
+                    for (var i = 0; i < slide.lines.length; i++) ...[
+                      SizedBox(height: i == 0 ? 6 : 14),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: BrassGlyph(
+                              slide.lines[i].glyph,
+                              size: 20,
+                              color: AppColors.antiqueBrass,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(slide.lines[i].text, style: bodyStyle)),
+                        ],
+                      ),
+                    ],
+                    if (slide.art == WelcomeArt.roleChoice && onRoleChosen != null) ...[
+                      const SizedBox(height: 16),
+                      for (final choice in _roleChoices) ...[
+                        _RoleChoice(choice: choice, onTap: () => onRoleChosen!(choice.role)),
+                        const SizedBox(height: 10),
+                      ],
+                    ],
+                  ],
                 ),
-              ],
+              ),
             );
           },
         ),
@@ -699,29 +677,40 @@ class _PhoneShot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = height * aspect;
+    const radius = BorderRadius.all(Radius.circular(12));
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
         color: AppColors.parchmentLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.antiqueBrass, width: 1.2),
+        borderRadius: radius,
         boxShadow: [
           BoxShadow(
-            color: AppColors.forestGreen.withValues(alpha: 0.14),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
+            color: AppColors.forestGreen.withValues(alpha: 0.10),
+            blurRadius: 16,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Image.asset(
-        asset,
-        fit: BoxFit.cover,
-        alignment: Alignment.topCenter,
-        cacheWidth: 600,
-        // A missing screenshot leaves a quiet parchment frame, never an error.
-        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+      // The brass edge is painted OVER the screen, not under it: underneath,
+      // the opaque screenshot covered it and only slivers showed through at
+      // the rounded corners (the same fault the AM/PM switch had).
+      foregroundDecoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(color: AppColors.antiqueBrass, width: 1.4),
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: Image.asset(
+          asset,
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          cacheWidth: 700,
+          // A missing screenshot leaves a quiet parchment frame, never an error.
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+        ),
       ),
     );
   }

@@ -39,6 +39,12 @@ class CloudShell extends StatefulWidget {
 
   @override
   State<CloudShell> createState() => _CloudShellState();
+
+  /// Show a preview profile with the ordinary chrome (menu, no banner) — only
+  /// for rendering marketing screenshots of the sample church; the profile's
+  /// own preview guards still keep every load and write offline.
+  @visibleForTesting
+  static bool debugShowPreviewAsLive = false;
 }
 
 class _CloudShellState extends State<CloudShell>
@@ -47,7 +53,8 @@ class _CloudShellState extends State<CloudShell>
 
   RunnerProfile get _profile => widget.profile;
 
-  bool get _isPreview => widget.preview || widget.profile.isPreview;
+  bool get _isPreview =>
+      !CloudShell.debugShowPreviewAsLive && (widget.preview || widget.profile.isPreview);
 
   /// Leaves the preview, back to wherever it was opened from.
   void _exitPreview() => Navigator.of(context).maybePop();

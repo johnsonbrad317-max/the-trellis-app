@@ -100,13 +100,38 @@ class _CalendarSheetBodyState extends State<_CalendarSheetBody> {
             Text('Your Calendars', style: textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
-              'The Trellis reads the calendars already on this phone — iCloud, Google, '
-              'Outlook, whichever you use — and shares only when you are busy or free. Never '
-              'what is on your calendar. Your Witness or Runner sees only times you both '
-              'have open.',
+              'The Trellis shares only when you are busy or free — never what is on your '
+              'calendar. Your Witness or Runner sees only times you both have open.',
               style: textTheme.bodyMedium,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            // The disclaimer, before anything is shared: most people's work
+            // calendar lives only in the Outlook (or Gmail) app, where no
+            // other app can read it. The calendar tags further down show
+            // which accounts are on the phone.
+            BookplatePlate(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const BrassGlyph(BrassGlyphKind.info, size: 18, color: AppColors.antiqueBrass),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Only calendars synced to this phone's Calendar app",
+                          style: textTheme.titleMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(calendarAccountHelp(defaultTargetPlatform), style: textTheme.bodySmall),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             BookplatePlate(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -192,25 +217,6 @@ class _CalendarSheetBodyState extends State<_CalendarSheetBody> {
               'whenever you open The Trellis, so keep opening it now and then and your '
               'partner always sees your real week.',
               style: textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            // The commonest surprise: an Outlook (or Google) calendar that
-            // lives only inside its own app is not on the phone's calendar
-            // list, so it can't be read until the account is added to the
-            // phone itself. The calendar tags above show which accounts are.
-            BookplatePlate(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    "Don't see your Outlook or Google calendar?",
-                    style: textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(calendarAccountHelp(defaultTargetPlatform), style: textTheme.bodySmall),
-                ],
-              ),
             ),
             const SizedBox(height: 8),
             // Family wall calendars (Skylight and the like) mirror one of the
@@ -518,10 +524,11 @@ class _DayTimesRow extends StatelessWidget {
 /// How to get a calendar that lives in an email account (Outlook, Gmail) onto
 /// the phone's own calendar list, which is what The Trellis reads.
 String calendarAccountHelp(TargetPlatform platform) => platform == TargetPlatform.android
-    ? 'The Trellis reads the calendars your phone syncs. In the Outlook app, open Settings, '
-        'tap your account and turn on Sync calendars. A Google account added to the phone is '
-        'read automatically.'
-    : 'The Trellis reads the calendars your iPhone syncs. The Outlook app keeps its calendar '
-        'to itself, so add the account to the iPhone: Settings → Apps → Calendar → Calendar '
-        'Accounts → Add Account → Microsoft Exchange (work or school) or Outlook.com, and '
-        'switch Calendars on. Google works the same way. Then tap Refresh now.';
+    ? "The Trellis can only see calendars your phone itself syncs. If your calendar lives in "
+        'the Outlook app, open its Settings, tap your account and turn on Sync calendars. A '
+        'Google account added to the phone is seen automatically.'
+    : "The Trellis can only see calendars synced to your iPhone's own Calendar app — iCloud, "
+        'or an account added in Settings. A work or personal calendar that lives only in the '
+        'Outlook or Gmail app is not seen. To include it: Settings → Apps → Calendar → '
+        'Calendar Accounts → Add Account → Microsoft Exchange (work or school), Outlook.com or '
+        'Google, and switch Calendars on. Then tap Refresh now.';

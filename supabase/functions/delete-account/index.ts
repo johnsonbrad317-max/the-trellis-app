@@ -7,10 +7,20 @@
 // SDK automatically attaches the caller's own JWT to.
 //
 // Order matters here, and it's enforced by this function's own control
-// flow rather than left to the client: every active Witness is notified
-// BEFORE the delete happens, so an app crash or a lost connection mid-flow
-// can only ever result in a still-live account (safe to retry), never a
-// deleted account whose Witness was never told.
+// flow rather than left to the client: every active Witness is notified (and
+// left an in-app note) BEFORE the delete happens, so an app crash or a lost
+// connection mid-flow can only ever result in a still-live account (safe to
+// retry), never a deleted account whose Witness was never told.
+//
+// Each active Witness also gets a one-time note in the app ("Sarah has left
+// The Trellis" — migration 028, record_runner_departure), written BEFORE the
+// deletion while the pairings and the name still exist, so a Witness who
+// missed the push is still told. PRIVACY: that note keeps the departed
+// person's FIRST NAME only — nothing else about them, and no link back to the
+// deleted account — for at most 30 days (7 days once the Witness has seen
+// it), after which a nightly job deletes it. The privacy policy should say so.
+// If the deletion itself then fails, the notes are taken back
+// (retract_runner_departure), since the person is still here.
 //
 // The person's prayer photos (private `prayer-photos` storage bucket, folder
 // `<user id>/` — migration 021) are removed here too, because deleting the
@@ -18,11 +28,13 @@
 //
 // What can NOT stop the deletion (Apple requires that deletion actually
 // happens on request): a slow, failing or unconfigured push engine, a failed
-// profile/pairing lookup, or a storage problem while removing photos. Each of
+// profile/pairing lookup, a failed departure note (including migration 028
+// not applied yet), or a storage problem while removing photos. Each of
 // those courtesy steps is best effort and strictly time-boxed
-// (8 s per call, 12 s for all of it, run side by side), then the account is
-// deleted regardless. (If photo removal fails, the files are left behind with
-// no owner; 021's verification block has the query that finds them.)
+// (4 s for the departure note, 8 s per other call, 12 s for all of it, run
+// side by side), then the account is deleted regardless. (If photo removal
+// fails, the files are left behind with no owner; 021's verification block has
+// the query that finds them.)
 //
 // Contract with the app (lib/models/runner_profile.dart → deleteAccount):
 //   200 { "deleted": true }           the account is gone
@@ -38,6 +50,8 @@
 //
 // Deploy (JWT verification ON — the default):
 //   supabase functions deploy delete-account
+// The Witness notes need migration 028; without it they are skipped (logged)
+// and everything else works as before.
 // =============================================================================
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -62,6 +76,10 @@ const COURTESY_TIMEOUT_MS = 8_000;
 const COURTESY_BUDGET_MS = 12_000;
 /// The delete itself cascades through the user's rows; give it room.
 const DELETE_TIMEOUT_MS = 25_000;
+/// How long writing (or taking back) the Witnesses' departure notes may take.
+/// Shorter than the other calls because the Witness pushes wait for it: the
+/// note should already exist when a Witness taps the push that points at it.
+const DEPARTURE_TIMEOUT_MS = 4_000;
 /// Nobody has anywhere near this many Witnesses; it only bounds the fan-out.
 const MAX_WITNESSES = 25;
 /// Where prayer photos live (migration 021): `<user id>/<prayer item id>.jpg`.
@@ -127,6 +145,39 @@ async function notifyWitnesses(
   }
 }
 
+/// Calls one of migration 028's departure-note functions (service role) and
+/// returns how many notes it wrote or removed, or null on any failure —
+/// including the function not existing yet (028 not applied). Never throws,
+/// and never takes longer than DEPARTURE_TIMEOUT_MS.
+async function callDepartureRpc(
+  admin: SupabaseClient,
+  fn: 'record_runner_departure' | 'retract_runner_departure',
+  userId: string,
+): Promise<number | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), DEPARTURE_TIMEOUT_MS);
+    });
+    const call = Promise.resolve(admin.rpc(fn, { p_runner_id: userId }));
+    const result = await Promise.race([call, timeout]);
+    if (result === 'timeout') {
+      console.error(`delete-account: ${fn} timed out (continuing).`);
+      return null;
+    }
+    if (result.error) {
+      console.error(`delete-account: ${fn} failed (continuing):`, describeError(result.error));
+      return null;
+    }
+    return typeof result.data === 'number' ? result.data : 0;
+  } catch (error) {
+    console.error(`delete-account: ${fn} threw (continuing):`, describeError(error));
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /// The kind of failure only ("StorageApiError", "TimeoutError") — never its
 /// message, which can quote a path.
 function errorClass(error: unknown): string {
@@ -186,13 +237,16 @@ async function removePrayerPhotos(admin: SupabaseClient, userId: string): Promis
   }
 }
 
-/// Notify the Witnesses and remove prayer photos, side by side. Resolves
-/// 'done' whatever happens inside — it never rejects.
+/// Leave each Witness a departure note, notify them, and remove prayer photos,
+/// side by side (the pushes go out once the note is written or has given up).
+/// Resolves 'done' whatever happens inside — it never rejects.
 async function courtesySteps(admin: SupabaseClient, supabaseUrl: string, userId: string): Promise<'done'> {
   try {
     const notify = (async () => {
       // service-role reads, so this still works even if a future RLS change
-      // narrows a plain user's own read access.
+      // narrows a plain user's own read access. The departure note (028) is
+      // written alongside the lookups, while the profile and pairings still
+      // exist; it reads them itself, inside the database.
       const [profile, pairings] = await Promise.all([
         admin.from('profiles').select('name').eq('id', userId).maybeSingle(),
         admin
@@ -201,6 +255,7 @@ async function courtesySteps(admin: SupabaseClient, supabaseUrl: string, userId:
           .eq('runner_id', userId)
           .eq('status', 'active')
           .limit(MAX_WITNESSES),
+        callDepartureRpc(admin, 'record_runner_departure', userId),
       ]);
       if (profile.error) console.error('delete-account: profile lookup failed:', describeError(profile.error));
       if (pairings.error) {
@@ -248,7 +303,7 @@ async function handle(req: Request): Promise<Response> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 
   // ---- Courtesy steps: best effort, time-boxed, never fatal -------------------
-  // Whatever happens in here (slow push engine, slow Cronofy, slow lookups),
+  // Whatever happens in here (slow push engine, slow lookups, slow storage),
   // the deletion below starts no later than COURTESY_BUDGET_MS from now.
   let timer: ReturnType<typeof setTimeout> | undefined;
   const budget = new Promise<'timeout'>((resolve) => {
@@ -261,14 +316,20 @@ async function handle(req: Request): Promise<Response> {
   }
 
   // ---- The deletion itself ------------------------------------------------------
+  // On failure the person is still here, so the departure notes written above
+  // are taken back (best effort, time-boxed) before answering. If the delete
+  // did in fact go through despite the error, their pairings are gone and the
+  // retraction finds nothing to remove — the notes stay, as they should.
   try {
     const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
     if (deleteError) {
       console.error('delete-account: deleteUser failed:', describeError(deleteError));
+      await callDepartureRpc(admin, 'retract_runner_departure', userId);
       return errorResponse(500, 'delete_failed', 'We could not delete your account right now. Please try again.');
     }
   } catch (error) {
     console.error('delete-account: deleteUser threw:', describeError(error));
+    await callDepartureRpc(admin, 'retract_runner_departure', userId);
     return errorResponse(500, 'delete_failed', 'We could not delete your account right now. Please try again.');
   }
 

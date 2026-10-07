@@ -31,8 +31,9 @@ import 'package:trellis/widgets/places_autocomplete_field.dart';
 
 const _out = String.fromEnvironment('RENDER_OUT');
 
-/// The top of a phone screen, in logical pixels — what the deck's frames show.
-const _size = Size(390, 620);
+/// A whole phone screen; the deck's frames show its top 620 points (so the
+/// screen's bottom corner vines fall outside the frame).
+const _size = Size(390, 844);
 
 void main() {
   testWidgets('renders the welcome deck screenshots', (tester) async {

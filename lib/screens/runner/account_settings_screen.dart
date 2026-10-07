@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
+import '../../models/membership_gate.dart';
 import '../../models/phone_number.dart';
 import '../../models/runner_profile.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_app_bar.dart';
 import '../../widgets/bookplate_dialog.dart';
 import '../../widgets/bookplate_plate.dart';
+import '../../widgets/gift_code_dialog.dart';
 import '../../widgets/paywall_sheet.dart';
 import '../../widgets/trellis_scaffold.dart';
 
@@ -149,11 +151,28 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     if (mounted) showBookplateNotice(context, notice);
   }
 
-  String _membershipLabel(MembershipStatus status) => switch (status) {
-        MembershipStatus.trial => "You're on a free trial.",
-        MembershipStatus.active => 'Your membership is active.',
-        MembershipStatus.cancelled => 'Your membership has been cancelled.',
-      };
+  String _membershipLabel(MembershipStatus status) {
+    // Trial and gift dates appear only once memberships are switched on at
+    // launch (migration 029); until then this reads exactly as it always has.
+    final trialEndsAt = _profile.trialEndsAt;
+    if (_profile.isTrialPeriod && trialEndsAt != null) {
+      return 'Free trial — ends ${formatMembershipDate(trialEndsAt)}';
+    }
+    final gate = _profile.membershipGate;
+    final paidUntil = gate.paidUntil;
+    if (gate.enforced && paidUntil != null && paidUntil.isAfter(DateTime.now())) {
+      return 'Your membership is active through ${formatMembershipDate(paidUntil)}.';
+    }
+    return switch (status) {
+      MembershipStatus.trial => "You're on a free trial.",
+      MembershipStatus.active => 'Your membership is active.',
+      MembershipStatus.cancelled => 'Your membership has been cancelled.',
+    };
+  }
+
+  Future<void> _showGiftCodeDialog() async {
+    await showGiftCodeDialog(context, _profile);
+  }
 
   bool _isOpeningStoreSettings = false;
 
@@ -455,6 +474,18 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       onPressed: _isOpeningStoreSettings ? null : _confirmCancelMembership,
                     ),
                   ],
+                  // Open to anyone at any time: a gift adds its months on top
+                  // of whatever membership is already there.
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: BookplateButton(
+                      label: 'Have a gift code?',
+                      variant: BookplateButtonVariant.link,
+                      compact: true,
+                      onPressed: _showGiftCodeDialog,
+                    ),
+                  ),
                 ],
               ),
             ),

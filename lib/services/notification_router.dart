@@ -101,8 +101,11 @@ class NotificationRouter {
         break;
       case 'account_deleted':
         // Only ever sent to a Witness whose paired Runner just deleted
-        // their account — the pairing row is already gone (cascaded), so
-        // this just lands them back on an updated Runners list.
+        // their account — the pairing row is already gone (cascaded). Drop
+        // that Runner and mark the Runners list stale, so the Witness shell
+        // reloads it — and with it the "has left The Trellis" note
+        // (migration 028), which the shell then shows once.
+        profile.markWitnessDataStale(departedRunnerId: data['runnerId'] as String?);
         _goToWitnessShell(navigator, profile, selectRunnerId: null);
         break;
       default:
