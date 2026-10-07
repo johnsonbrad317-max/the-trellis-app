@@ -132,3 +132,36 @@ redraw it.)
 > wood and add leaves or fruit to it; never redraw it. Export every group as
 > its own transparent PNG at full canvas size, named `vine_stem_bare.png`,
 > `vine_branch_3_fruiting.png`, and so on — 27 files — plus the master SVG.
+
+---
+
+## Revision 2 — technical notes to keep the second pass drop-in
+
+(Added after the first delivery, alongside the owner's art direction: larger,
+denser vine; fine hatching over parchment; muted antique spot colour;
+exaggerated withered shapes.)
+
+1. **Keep everything that made pass one work.** Same 27 file names, same
+   1696 × 2528 transparent canvas, same stacking (stem, then branch 1 … 6),
+   same attachment heights (2250, 1950, 1650, 1350, 1050, 750), and wood that
+   is identical across a part's states. Branches may reach much further and
+   overlap one another — each file still holds only its own part.
+2. **The opaque base colour is `#F8F1E0`** (the app's vellum — the card the
+   vine sits on), not `#F9F6F0`. The trellis shows the card through its
+   lattice, so a fill in any other colour reads as a patch.
+3. **Exact inks:** wood `#B8860B` brass with `#5A4A1E` bronze shadow; leaves
+   a muted green `#4F6B4A` deepening to forest `#1E3A2B`; grapes a muted
+   purple `#6B3A55` deepening to `#3A1E2E`; withered parts scorched umber
+   `#7A5A22` deepening to `#4A3414`. No pure black, no white.
+4. **Hatching must survive being small.** The dashboard shows the whole
+   canvas about 280 points tall (≈ ⅓ size on a phone) and the Cloud roster
+   about 40 points. Keep hatch lines at least ~4 px wide and ~6 px apart on
+   the 1696-wide canvas, matching the weight of the lines in
+   `trellis_empty.png`; finer work turns to grey mush or moiré.
+5. **Colour is final in the art.** The app will show the files exactly as
+   drawn (no tinting), so what you see over `trellis_empty.png` on a
+   `#F8F1E0` background is what the Runner sees.
+6. **Check before handing over:** all 27 over `trellis_empty.png` on
+   `#F8F1E0` — the fully grown, all-fruiting vine should cover most of the
+   lattice; withered branches should be recognisable at a glance even at a
+   third of the size.
