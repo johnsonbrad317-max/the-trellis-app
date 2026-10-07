@@ -159,7 +159,7 @@ int? daysSince(DateTime? since, [DateTime? now]) {
 }
 
 /// The tone the app uses. One line to change.
-const VineTone vineTone = VineTone.muted;
+const VineTone vineTone = VineTone.original;
 
 /// The colour matrix for [tone]: luminance mapped from deep bronze to
 /// parchment, blended with the original colour by how much is kept.
@@ -189,6 +189,10 @@ ColorFilter? vineToneFilter(VineTone tone) {
 /// (revealed from the bottom as the season grows) and each branch in its
 /// current condition. A change of scene crossfades each part on its own — a
 /// branch coming into fruit, another withering — and the stem climbs.
+///
+/// The widget is the size of the trellis frame. The vine is drawn at its full
+/// canvas size around it, so leaves and grapes the artist let hang over the
+/// posts or below the rail do hang over them instead of being cut off.
 class TrellisVisual extends StatelessWidget {
   const TrellisVisual({super.key, required this.scene, this.height = 280, this.tone = vineTone});
 
@@ -199,102 +203,112 @@ class TrellisVisual extends StatelessWidget {
   /// side-by-side comparison, say) asks for another.
   final VineTone tone;
 
-  /// The trellis frame's region of the shared 1696 x 2528 canvas, as a
-  /// fraction, so every layer (whatever its export size) lands on the wood.
-  static const _frame = Rect.fromLTRB(120 / 1696, 36 / 2528, 1578 / 1696, 2442 / 2528);
-
-  static const _trellisSize = Size(1696, 2528);
-  static const _vineSize = Size(848, 1264);
+  /// The shared canvas every layer is drawn on, and the trellis frame's
+  /// region of it.
+  static const _canvas = Size(1696, 2528);
+  static const _frame = Rect.fromLTRB(120, 36, 1578, 2442);
   static const _fade = Duration(milliseconds: 600);
-
-  static Rect _content(Size size) => Rect.fromLTRB(
-        _frame.left * size.width,
-        _frame.top * size.height,
-        _frame.right * size.width,
-        _frame.bottom * size.height,
-      );
-
-  Widget _picture(String asset, Size size) => TrimmedAsset(
-        asset: asset,
-        imageSize: size,
-        content: _content(size),
-        height: height,
-        cacheWidth: 700,
-      );
 
   static String _vineAsset(String part, VinePartState state) =>
       'assets/images/vine/vine_${part}_${state.name}.png';
 
-  Widget _branch(int number, VinePartState state) => AnimatedSwitcher(
-        duration: _fade,
-        child: state == VinePartState.hidden
-            ? SizedBox(key: ValueKey('b$number-hidden'), height: height)
-            : KeyedSubtree(
-                key: ValueKey('b$number-${state.name}'),
-                child: _picture(_vineAsset('branch_$number', state), _vineSize),
-              ),
-      );
-
   @override
   Widget build(BuildContext context) {
-    final filter = vineToneFilter(tone);
+    final scale = height / _frame.height;
+    final width = _frame.width * scale;
+    final canvasWidth = _canvas.width * scale;
+    final canvasHeight = _canvas.height * scale;
+
+    Widget layer(String asset) => Image.asset(
+          asset,
+          width: canvasWidth,
+          height: canvasHeight,
+          fit: BoxFit.fill,
+          cacheWidth: 700,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
+        );
+
+    Widget branch(int number, VinePartState state) => AnimatedSwitcher(
+          duration: _fade,
+          child: state == VinePartState.hidden
+              ? SizedBox.shrink(key: ValueKey('b$number-hidden'))
+              : KeyedSubtree(
+                  key: ValueKey('b$number-${state.name}'),
+                  child: layer(_vineAsset('branch_$number', state)),
+                ),
+        );
+
     final vine = Stack(
-      alignment: Alignment.bottomCenter,
       children: [
         // The stem, climbing: shown from the bottom up to its reveal, its
         // top dissolving rather than ending in a straight cut.
-        TweenAnimationBuilder<double>(
-          tween: Tween(end: scene.stemReveal),
-          duration: const Duration(milliseconds: 900),
-          curve: Curves.easeOutCubic,
-          builder: (context, factor, child) => ClipRect(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              heightFactor: factor,
-              child: factor >= 0.999
-                  ? child
-                  : ShaderMask(
-                      blendMode: BlendMode.dstIn,
-                      shaderCallback: (bounds) => const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0x00000000), Color(0xFF000000)],
-                        stops: [0.0, 0.08],
-                      ).createShader(bounds),
-                      child: child,
-                    ),
-            ),
-          ),
-          child: AnimatedSwitcher(
-            duration: _fade,
-            child: KeyedSubtree(
-              key: ValueKey('stem-${scene.stem.name}'),
-              child: _picture(_vineAsset('stem', scene.stem), _vineSize),
+        Positioned.fill(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(end: scene.stemReveal),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeOutCubic,
+              builder: (context, factor, child) => ClipRect(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  heightFactor: factor,
+                  child: factor >= 0.999
+                      ? child
+                      : ShaderMask(
+                          blendMode: BlendMode.dstIn,
+                          shaderCallback: (bounds) => const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x00000000), Color(0xFF000000)],
+                            stops: [0.0, 0.08],
+                          ).createShader(bounds),
+                          child: child,
+                        ),
+                ),
+              ),
+              child: AnimatedSwitcher(
+                duration: _fade,
+                child: KeyedSubtree(
+                  key: ValueKey('stem-${scene.stem.name}'),
+                  child: layer(_vineAsset('stem', scene.stem)),
+                ),
+              ),
             ),
           ),
         ),
         // Branches over the stem, lowest first (1 and 4 loop in front of it).
-        for (var i = 0; i < 6; i++) _branch(i + 1, scene.branches[i]),
+        for (var i = 0; i < 6; i++) Positioned.fill(child: branch(i + 1, scene.branches[i])),
       ],
     );
+    final filter = vineToneFilter(tone);
 
     return SizedBox(
+      width: width,
       height: height,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Stack(
-          alignment: Alignment.bottomCenter,
-          children: [
-            // The bare wooden trellis, always whole.
-            _picture('assets/images/trellis_empty.png', _trellisSize),
-            Positioned.fill(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: filter == null ? vine : ColorFiltered(colorFilter: filter, child: vine),
-              ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // The bare wooden trellis, always whole, filling the widget.
+          Positioned.fill(
+            child: TrimmedAsset(
+              asset: 'assets/images/trellis_empty.png',
+              imageSize: _canvas,
+              content: _frame,
+              height: height,
+              cacheWidth: 700,
             ),
-          ],
-        ),
+          ),
+          // The vine, on the full canvas laid around the frame.
+          Positioned(
+            left: -_frame.left * scale,
+            top: -_frame.top * scale,
+            width: canvasWidth,
+            height: canvasHeight,
+            child: filter == null ? vine : ColorFiltered(colorFilter: filter, child: vine),
+          ),
+        ],
       ),
     );
   }
