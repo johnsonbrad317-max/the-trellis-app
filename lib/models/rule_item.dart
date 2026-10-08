@@ -143,7 +143,30 @@ const throwOffPresets = [
   'lustful thoughts',
   'overspending',
   'idle scrolling',
+  'checking work email after hours',
+  'drinking alcohol',
 ];
+
+/// Words that open a rhythm named as something NOT to do.
+const _avoidPrefixes = [
+  'avoid ', 'no ', 'abstain from ', 'refrain from ', "don't ", 'don’t ', 'do not ',
+];
+
+/// Sorts a rhythm by what its words say. Anything named as something not to
+/// do ("No checking work email after hours", "Abstain from alcohol") belongs
+/// with the sins to throw off, asked as "Did you avoid ___?" — otherwise its
+/// check-in would read "Did you no checking…?". Returns the blank in
+/// "Avoid ___" for those; anything else comes back as given.
+({String title, bool isThrowOff}) sortRhythm(String title, {bool isThrowOff = false}) {
+  final trimmed = title.trim();
+  final lower = trimmed.toLowerCase();
+  for (final prefix in _avoidPrefixes) {
+    if (lower.startsWith(prefix) && trimmed.length > prefix.length) {
+      return (title: trimmed.substring(prefix.length).trim(), isThrowOff: true);
+    }
+  }
+  return (title: trimmed, isThrowOff: isThrowOff);
+}
 
 /// A single rhythm within a Runner's Rule of Life, e.g. "pray for 15
 /// minutes" under Abiding & Prayer.

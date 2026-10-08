@@ -1562,6 +1562,10 @@ class RunnerProfile extends ChangeNotifier {
     bool isThrowOff = false,
   }) async {
     _refuseInPreview();
+    // "No…", "Abstain from…" and the like are sins to throw off.
+    final sorted = sortRhythm(title, isThrowOff: isThrowOff);
+    title = sorted.title;
+    isThrowOff = sorted.isThrowOff;
     final row = await supabase
         .from('rule_items')
         .insert({

@@ -42,11 +42,11 @@ const _rhythmPresets = {
     'Fast from Food for One Meal',
     'Exercise for 30 Minutes',
     'Get 7+ Hours of Sleep',
-    'Abstain from Alcohol',
+    'Take a 20-Minute Walk',
   ],
   RuleCategory.workRest: [
     'Observe a 24-Hour Sabbath',
-    'No Checking Work Email After Hours',
+    'Be Done with Work by 6 PM',
     'Practice Complete Integrity in the Workplace',
     'Take a Lunch Break Away from the Desk',
     'Keep the Phone Out of the Bedroom at Night',
@@ -248,6 +248,7 @@ class RuleBuilderScreen extends StatelessWidget {
 
     if (confirmed != true) return;
     try {
+      final sorted = sortRhythm(title);
       await profile.addRuleItem(
         category: category,
         title: title,
@@ -255,6 +256,9 @@ class RuleBuilderScreen extends StatelessWidget {
         weeklyDays: weeklyDays,
         isAnchorRhythm: isAnchor,
       );
+      if (sorted.isThrowOff && context.mounted) {
+        showBookplateNotice(context, 'Added under Sins to Throw Off: "Avoid ${sorted.title}".');
+      }
     } catch (_) {
       if (context.mounted) showBookplateNotice(context, "Couldn't add that rhythm. Try again.");
     }
