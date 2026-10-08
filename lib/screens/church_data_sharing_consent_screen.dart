@@ -22,7 +22,7 @@ import '../widgets/trellis_scaffold.dart';
 /// (vitality score) and check-in activity visible to that church's
 /// leadership on their Cloud Roster (see
 /// supabase/migrations/002_grants_and_cloud_access.sql's church_roster
-/// view) — raw rule items/journal entries are never exposed, only that
+/// view) — raw rule items and prayers are never exposed, only that
 /// rolled-up summary.
 ///
 /// Returns `true` via [Navigator.pop] once the Runner consents, `false`/
@@ -69,7 +69,7 @@ class _ChurchDataSharingConsentScreenState extends State<ChurchDataSharingConsen
                 "in to share Consumer Health Data — specifically your aggregate rhythm "
                 "consistency (the share of your rhythms you keep) and check-in activity — with that church's "
                 'leadership on their Roster, so they can support your congregation well. '
-                'Your individual rhythm entries and journal content are never shared — '
+                'Your individual rhythms and prayers are never shared — '
                 'only that rolled-up summary.',
                 style: textTheme.bodyMedium,
                 textAlign: TextAlign.center,
