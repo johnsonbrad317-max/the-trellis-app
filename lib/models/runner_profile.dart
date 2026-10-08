@@ -1841,16 +1841,37 @@ class RunnerProfile extends ChangeNotifier {
         .eq('id', id);
   }
 
+  /// The check-in already given for [date]'s calendar day, or null.
+  CheckInEntry? checkInFor(DateTime date) {
+    for (final entry in checkInHistory) {
+      if (entry.date.year == date.year &&
+          entry.date.month == date.month &&
+          entry.date.day == date.day) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
   /// Batch-inserts one day's worth of responses into `check_ins`. Grace
   /// Mechanics (three consecutive Anchor Rhythm misses) fire server-side
   /// automatically via the check_ins_grace_nudge trigger — no client-side
   /// port of the old _fireGraceNudge/_consecutiveAnchorMisses logic needed.
+  ///
+  /// A day's check-in is locked in once given: a plain insert, and the
+  /// server refuses any change (supabase/migrations/031). Throws
+  /// [CheckInAlreadyGivenException] if that day was already checked in
+  /// (say from another phone).
   Future<void> recordCheckIn(DateTime date, Map<String, bool> responses) async {
     _refuseInPreview();
+    if (checkInFor(date) != null) throw const CheckInAlreadyGivenException();
     final entry = CheckInEntry(date: date, responses: responses);
-    await supabase
-        .from('check_ins')
-        .upsert(entry.toInsertRows(id), onConflict: 'rule_item_id,check_in_date');
+    try {
+      await supabase.from('check_ins').insert(entry.toInsertRows(id));
+    } on PostgrestException catch (error) {
+      if (error.code == '23505') throw const CheckInAlreadyGivenException();
+      rethrow;
+    }
     checkInHistory.add(entry);
     notifyListeners();
     unawaited(refreshAnalytics());
@@ -2687,6 +2708,11 @@ class RunnerProfile extends ChangeNotifier {
 /// Thrown by a [RunnerProfile] write attempted on a preview profile
 /// ([RunnerProfile.isPreview]). Screens normally check `isPreview` first and
 /// show a notice; this is the backstop.
+/// The day was already checked in; check-ins are locked in once given.
+class CheckInAlreadyGivenException implements Exception {
+  const CheckInAlreadyGivenException();
+}
+
 class PreviewModeException implements Exception {
   const PreviewModeException();
 

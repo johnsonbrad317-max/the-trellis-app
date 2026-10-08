@@ -71,7 +71,9 @@ class RuleOfLifeTab extends StatelessWidget {
             ],
           const SizedBox(height: 12),
           GradientButton(
-            label: "Today's Check-In",
+            label: profile.checkInFor(DateTime.now().subtract(const Duration(days: 1))) == null
+                ? "Today's Check-In"
+                : "View Today's Check-In",
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (context) => DailyCheckInScreen(profile: profile)),
             ),

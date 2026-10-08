@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/check_in_entry.dart';
 import '../../models/rule_item.dart';
 import '../../models/runner_profile.dart';
 import '../../services/analytics_service.dart';
@@ -12,7 +13,8 @@ import '../../widgets/trellis_scaffold.dart';
 
 /// A short retrospective on yesterday: every rhythm scheduled for that date
 /// gets a Yes/No answer, then Anchor Rhythm misses are called out before
-/// submitting.
+/// submitting. Once given, a day's check-in is locked in: the screen shows
+/// the answers as they were sent, with nothing to change or resubmit.
 class DailyCheckInScreen extends StatefulWidget {
   const DailyCheckInScreen({super.key, required this.profile});
 
@@ -27,13 +29,21 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen> {
   late final List<RuleItem> _dueItems;
   final Map<String, bool> _responses = {};
 
+  /// Yesterday's check-in, if it was already given.
+  late final CheckInEntry? _given;
+
   @override
   void initState() {
     super.initState();
     final today = DateTime.now();
     final startOfToday = DateTime(today.year, today.month, today.day);
     _yesterday = startOfToday.subtract(const Duration(days: 1));
-    _dueItems = widget.profile.ruleItems.where((item) => item.scheduledFor(_yesterday)).toList();
+    _given = widget.profile.checkInFor(_yesterday);
+    final given = _given;
+    _dueItems = given == null
+        ? widget.profile.ruleItems.where((item) => item.scheduledFor(_yesterday)).toList()
+        : widget.profile.ruleItems.where((item) => given.responses.containsKey(item.id)).toList();
+    if (given != null) _responses.addAll(given.responses);
   }
 
   bool get _missedAnchor =>
@@ -99,6 +109,11 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen> {
           );
         }
       }
+    } on CheckInAlreadyGivenException {
+      if (!mounted) return true;
+      showBookplateNotice(context, 'This day was already checked in. Answers are locked in once given.');
+      Navigator.of(context).pop();
+      return true;
     } catch (_) {
       if (!mounted) return false;
       showBookplateNotice(context, "Network error — couldn't submit your check-in. Try again.");
@@ -128,9 +143,19 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen> {
         children: [
           Text('Looking back on ${_formatDate(_yesterday)}', style: textTheme.headlineSmall),
           const SizedBox(height: 8),
-          Text('A short retrospective — how did yesterday go?', style: textTheme.bodyMedium),
+          Text(
+            _given == null
+                ? 'A short retrospective — how did yesterday go?'
+                : 'Checked in. Your answers are locked in.',
+            style: textTheme.bodyMedium,
+          ),
           const SizedBox(height: 24),
-          if (_dueItems.isEmpty)
+          if (_given != null)
+            for (final item in _dueItems) ...[
+              _CheckInQuestion(item: item, value: _responses[item.id], onChanged: null),
+              const SizedBox(height: 12),
+            ]
+          else if (_dueItems.isEmpty)
             BookplatePlate(
               padding: const EdgeInsets.all(20),
               child: Text(
@@ -165,7 +190,9 @@ class _CheckInQuestion extends StatelessWidget {
 
   final RuleItem item;
   final bool? value;
-  final ValueChanged<bool> onChanged;
+
+  /// Null once the day is checked in: the answers show, but can't change.
+  final ValueChanged<bool>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +216,7 @@ class _CheckInQuestion extends StatelessWidget {
                   label: 'Yes',
                   color: AppColors.forestGreen,
                   selected: value == true,
-                  onPressed: () => onChanged(true),
+                  onPressed: onChanged == null ? null : () => onChanged!(true),
                 ),
               ),
               const SizedBox(width: 12),
@@ -198,7 +225,7 @@ class _CheckInQuestion extends StatelessWidget {
                   label: 'No',
                   color: AppColors.terracotta,
                   selected: value == false,
-                  onPressed: () => onChanged(false),
+                  onPressed: onChanged == null ? null : () => onChanged!(false),
                 ),
               ),
             ],
@@ -222,13 +249,14 @@ class _AnswerButton extends StatelessWidget {
   final String label;
   final Color color;
   final bool selected;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
       selected: selected,
+      enabled: onPressed != null,
       label: label,
       onTap: onPressed,
       excludeSemantics: true,
