@@ -58,6 +58,5 @@ class WitnessNotice {
   /// The dialog's body.
   String get message => '$runnerFirstName deleted their account, so everything they '
       'shared — their Rule of Life, check-ins and prayers — was removed with it, '
-      'and they no longer appear here. Nothing you did caused this. You might '
-      'reach out to them directly.';
+      'and they no longer appear here. You might reach out to them directly.';
 }

@@ -402,7 +402,7 @@ class RuleBuilderScreen extends StatelessWidget {
           // The pricing as the welcome deck states it: two free weeks from
           // sign-up, no card; then a subscription or a code.
           'Your first two weeks of The Trellis are free — no card needed. After that, keep '
-          'going for \$12 a year, or with a code from your church, organization or a friend.',
+          'going for \$12 a year, through your church or organization, or as a gift.',
       bodyBuilder: (dialogContext, setDialogState) {
         final textTheme = Theme.of(dialogContext).textTheme;
         return Column(

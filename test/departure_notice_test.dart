@@ -51,8 +51,7 @@ void main() {
         n.message,
         'Sarah deleted their account, so everything they shared — their Rule of '
         'Life, check-ins and prayers — was removed with it, and they no longer '
-        'appear here. Nothing you did caused this. You might reach out to them '
-        'directly.',
+        'appear here. You might reach out to them directly.',
       );
     });
   });
@@ -81,7 +80,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Sarah has left The Trellis'), findsOneWidget);
-      expect(find.textContaining('Nothing you did caused this.'), findsOneWidget);
+      expect(find.textContaining('You might reach out to them directly.'), findsOneWidget);
+      expect(find.textContaining('Nothing you did'), findsNothing);
       expect(find.text('OK'), findsOneWidget);
       expect(find.text('Cancel'), findsNothing);
       // Hand-built: no stock Material dialog, buttons or icons.

@@ -6,13 +6,13 @@ import '../../widgets/bookplate_dialog.dart';
 import '../../widgets/bookplate_plate.dart';
 import '../../widgets/brass_glyph.dart';
 import '../../widgets/church_affiliation_dialog.dart';
-import '../../widgets/gift_code_dialog.dart';
 import '../../widgets/paywall_sheet.dart';
 
 /// What the Runner view shows in place of its tabs once the free trial is
 /// over and there is no membership ([RunnerProfile.needsMembership], which is
 /// never true until `app_settings.enforce_membership` is switched on at
-/// launch — supabase/migrations/029). Three ways to keep going as a Runner,
+/// launch — supabase/migrations/029). Two ways to keep going as a Runner, a
+/// way to pick up a gift membership redeemed on the website (030),
 /// and the reminder that witnessing is always free. Nothing the Runner has
 /// built is touched; it is all there again the moment the gate lifts.
 ///
@@ -39,7 +39,7 @@ class _MembershipGatePageState extends State<MembershipGatePage> {
 
   RunnerProfile get _profile => widget.profile;
 
-  /// Runs one of the three ways in, then asks the server again. The shell
+  /// Runs one of the ways in, then asks the server again. The shell
   /// listens to the profile, so the page disappears by itself once the gate
   /// has lifted.
   Future<void> _attempt(Future<bool> Function() action) async {
@@ -74,7 +74,15 @@ class _MembershipGatePageState extends State<MembershipGatePage> {
   Future<bool> _churchCode() =>
       showChurchAffiliationDialog(context, _profile, acceptMembershipCodes: true);
 
-  Future<bool> _giftCode() => showGiftCodeDialog(context, _profile);
+  /// A gift is redeemed on the website (App Review Guideline 3.1.1 keeps
+  /// code entry out of the app); here the Runner only asks the server again.
+  Future<bool> _checkAgain() async {
+    await _profile.refreshMembership();
+    if (_profile.needsMembership && mounted) {
+      showBookplateNotice(context, "No membership on this account yet.");
+    }
+    return !_profile.needsMembership;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -139,9 +147,10 @@ class _MembershipGatePageState extends State<MembershipGatePage> {
                 ),
                 const SizedBox(height: 16),
                 option(
-                  label: 'Enter a gift code',
-                  note: 'If someone gave you The Trellis as a gift.',
-                  onPressed: () => _attempt(_giftCode),
+                  label: 'Check again',
+                  note: 'Given The Trellis as a gift? Follow the steps in your gift email, '
+                      'then check again.',
+                  onPressed: () => _attempt(_checkAgain),
                 ),
                 if (_busy) ...[
                   const SizedBox(height: 16),

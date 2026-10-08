@@ -8,7 +8,6 @@ import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_app_bar.dart';
 import '../../widgets/bookplate_dialog.dart';
 import '../../widgets/bookplate_plate.dart';
-import '../../widgets/gift_code_dialog.dart';
 import '../../widgets/paywall_sheet.dart';
 import '../../widgets/trellis_scaffold.dart';
 
@@ -168,10 +167,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       MembershipStatus.active => 'Your membership is active.',
       MembershipStatus.cancelled => 'Your membership has been cancelled.',
     };
-  }
-
-  Future<void> _showGiftCodeDialog() async {
-    await showGiftCodeDialog(context, _profile);
   }
 
   bool _isOpeningStoreSettings = false;
@@ -474,18 +469,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       onPressed: _isOpeningStoreSettings ? null : _confirmCancelMembership,
                     ),
                   ],
-                  // Open to anyone at any time: a gift adds its months on top
-                  // of whatever membership is already there.
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: BookplateButton(
-                      label: 'Have a gift code?',
-                      variant: BookplateButtonVariant.link,
-                      compact: true,
-                      onPressed: _showGiftCodeDialog,
-                    ),
-                  ),
                 ],
               ),
             ),

@@ -84,9 +84,9 @@ reminders are scheduled on your phone itself.
 
 **Purchases and codes.** If you subscribe, Apple (or Google) processes the
 payment; we receive only whether your membership is active — never your card
-details. If you redeem a gift code, we record that it was redeemed. If someone
-buys a gift code on our website, we keep the purchaser's email address with
-the code.
+details. If a gift code is redeemed for your account on our website, we
+record that it was redeemed and which account it went to. If someone buys a
+gift code on our website, we keep the purchaser's email address with the code.
 
 **Feedback and support.** If you send feedback or a support request, we
 receive what you write and basic device information (app version, device

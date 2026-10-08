@@ -9,7 +9,7 @@ import 'package:trellis/theme/app_theme.dart';
 
 /// The membership gate (supabase/migrations/029_membership_gate.sql): two free
 /// weeks, then the Runner view asks for a subscription, a church/organization
-/// code or a gift code — but only once the launch switch is on, and never for
+/// code or a gift membership — but only once the launch switch is on, and never for
 /// the Witness or the Cloud.
 void main() {
   final serverNow = DateTime.utc(2026, 11, 1, 12);
@@ -153,41 +153,6 @@ void main() {
     });
   });
 
-  group('gift codes', () {
-    test('typed codes are normalised like the server does', () {
-      expect(normalizeGiftCode(' 7kq3m-x9zpa '), '7KQ3MX9ZPA');
-      expect(normalizeGiftCode('7KQ3M X9ZPA'), '7KQ3MX9ZPA');
-      expect(normalizeGiftCode(' - '), isEmpty);
-    });
-
-    test('redeem_gift_code answers are read safely', () {
-      final ok = GiftCodeRedemption.fromJson({'ok': true, 'paid_until': '2027-10-07T12:00:00Z'});
-      expect(ok.ok, isTrue);
-      expect(ok.paidUntil, DateTime.utc(2027, 10, 7, 12));
-
-      final wrong = GiftCodeRedemption.fromJson({
-        'ok': false,
-        'reason': 'not_recognized',
-        'error': "That code wasn't recognized or has already been used.",
-      });
-      expect(wrong.ok, isFalse);
-      expect(wrong.rateLimited, isFalse);
-      expect(wrong.message, GiftCodeRedemption.notRecognizedMessage);
-
-      final limited = GiftCodeRedemption.fromJson({
-        'ok': false,
-        'reason': 'rate_limited',
-        'error': 'Too many tries for now. Please wait a while and try again.',
-      });
-      expect(limited.rateLimited, isTrue);
-      expect(limited.message, contains('Too many tries'));
-
-      final garbage = GiftCodeRedemption.fromJson('??');
-      expect(garbage.ok, isFalse);
-      expect(garbage.message, GiftCodeRedemption.notRecognizedMessage);
-    });
-  });
-
   group('RunnerProfile', () {
     test('is never gated before my_membership() has said otherwise', () {
       final profile = RunnerProfile.preview();
@@ -235,7 +200,8 @@ void main() {
       expect(find.textContaining('Keep going as a Runner with one of these:'), findsOneWidget);
       expect(find.text('Subscribe — \$12 a year'), findsOneWidget);
       expect(find.text('Enter a church or organization code'), findsOneWidget);
-      expect(find.text('Enter a gift code'), findsOneWidget);
+      expect(find.text('Check again'), findsOneWidget);
+      expect(find.textContaining('gift code'), findsNothing);
       expect(find.text('Witnessing is always free.'), findsOneWidget);
 
       final witnessLink = find.text('Switch to Witness');

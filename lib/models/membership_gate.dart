@@ -5,7 +5,8 @@ import 'user_role.dart';
 /// whether this person's Runner view would be behind it.
 ///
 /// The pricing model: two free weeks from sign-up, then a Runner keeps going
-/// with an App Store subscription, a church/organization code, or a gift code.
+/// with an App Store subscription, a church/organization code, or a gift membership
+/// (redeemed on the website against the account email, never in the app).
 /// Witnessing is always free and the Cloud is never gated, so the gate only
 /// ever applies to [UserRole.runner].
 ///
@@ -99,49 +100,6 @@ class MembershipGate {
     return enforced && trialEnd != null && now.isBefore(trialEnd) && !isCoveredAt(now);
   }
 }
-
-/// The answer from `redeem_gift_code()` (migration 029).
-class GiftCodeRedemption {
-  const GiftCodeRedemption({
-    required this.ok,
-    this.paidUntil,
-    this.rateLimited = false,
-    this.message,
-  });
-
-  const GiftCodeRedemption.notRecognized()
-      : ok = false,
-        paidUntil = null,
-        rateLimited = false,
-        message = notRecognizedMessage;
-
-  factory GiftCodeRedemption.fromJson(Object? json) {
-    if (json is! Map) return const GiftCodeRedemption.notRecognized();
-    if (json['ok'] == true) {
-      final paid = json['paid_until'];
-      return GiftCodeRedemption(ok: true, paidUntil: paid is String ? DateTime.tryParse(paid) : null);
-    }
-    final error = json['error'];
-    return GiftCodeRedemption(
-      ok: false,
-      rateLimited: json['reason'] == 'rate_limited',
-      message: error is String && error.trim().isNotEmpty ? error : notRecognizedMessage,
-    );
-  }
-
-  static const notRecognizedMessage = "That code wasn't recognized or has already been used.";
-
-  final bool ok;
-  final DateTime? paidUntil;
-  final bool rateLimited;
-
-  /// A sentence fit to show when [ok] is false.
-  final String? message;
-}
-
-/// Strips what a person might type around a gift code (spaces, dashes) and
-/// upper-cases it — the same normalising the server does.
-String normalizeGiftCode(String input) => input.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
 
 const _monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',

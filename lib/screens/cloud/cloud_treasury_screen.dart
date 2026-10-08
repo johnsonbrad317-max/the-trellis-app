@@ -10,7 +10,6 @@ import '../../widgets/bookplate_plate.dart';
 import '../../widgets/brass_glyph.dart';
 import '../../widgets/cloud_preview.dart';
 import '../../widgets/gradient_button.dart';
-import '../../widgets/launch_link.dart';
 
 /// The Church Admin's Treasury tab: subscription/license overview and
 /// church invite-code generation for onboarding new Runners.
@@ -154,19 +153,12 @@ class _CloudTreasuryScreenState extends State<CloudTreasuryScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // Licenses are bought outside the app (the old "Purchase Additional
-          // Licenses" button had nothing behind it); point at where it happens.
+          // Licenses are arranged with Unhindered Lives directly. No purchase
+          // link in the app (App Review Guideline 3.1.3): a support contact.
           Text(
-            'Need room for more Runners? Licenses are increased through Unhindered Lives.',
+            'Need room for more Runners? Write to support@unhinderedlives.com and we will '
+            'raise your license count.',
             style: textTheme.bodySmall,
-          ),
-          Center(
-            child: BookplateButton(
-              label: 'Increase licenses at unhinderedlives.com/trellis',
-              variant: BookplateButtonVariant.link,
-              compact: true,
-              onPressed: () => openWebPage(context, churchLicenseUrl),
-            ),
           ),
           const SizedBox(height: 20),
           Text('Invite New Runners', style: textTheme.headlineMedium),

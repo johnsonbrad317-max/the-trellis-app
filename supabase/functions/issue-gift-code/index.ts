@@ -2,9 +2,9 @@
 // =============================================================================
 // Mints gift-membership codes for the unhinderedlives.com website, which sells
 // them. The website's SERVER calls this after a successful checkout and shows /
-// emails the codes to the buyer; the person receiving one redeems it in the app
-// (Account & Membership -> "Have a gift code?", or the "two free weeks are
-// over" page). Contract for the website's developer:
+// emails the codes to the buyer; the person receiving one redeems it on the
+// website (redeem-gift-code, migration 030), never in the app. Contract for
+// the website's developer:
 // docs/gift-codes-for-website.md.
 //
 // URL:  https://qonsiliimbkcjmcnhonb.supabase.co/functions/v1/issue-gift-code

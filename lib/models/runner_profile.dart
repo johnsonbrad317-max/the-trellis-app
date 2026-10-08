@@ -2596,26 +2596,6 @@ class RunnerProfile extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Redeems a gift code bought on unhinderedlives.com (`redeem_gift_code`,
-  /// migration 029): single use, ignores case/spaces/dashes, adds the gift's
-  /// months to this account and marks the membership active. Throws only if
-  /// the server can't be reached.
-  Future<GiftCodeRedemption> redeemGiftCode(String code) async {
-    _refuseInPreview();
-    final normalized = normalizeGiftCode(code);
-    if (normalized.isEmpty) return const GiftCodeRedemption.notRecognized();
-
-    final result = GiftCodeRedemption.fromJson(
-      await supabase.rpc('redeem_gift_code', params: {'p_code': normalized}),
-    );
-    if (result.ok) {
-      membershipStatus = MembershipStatus.active;
-      await refreshMembership();
-      notifyListeners();
-    }
-    return result;
-  }
-
   // ---------------------------------------------------------------------
   // Departure notes for a Witness (supabase/migrations/028_departure_notices.sql)
   // ---------------------------------------------------------------------

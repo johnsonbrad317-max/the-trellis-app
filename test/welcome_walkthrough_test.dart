@@ -88,7 +88,9 @@ void main() {
       expect(text, contains('no credit card'));
       expect(text, contains(r'$12-a-year'));
       expect(text, contains('Witnesses always use The Trellis free'));
-      expect(text, contains('unhinderedlives.com/trellis'));
+      expect(text, contains('Churches and organizations can cover memberships'));
+      // No pointer to buying outside the App Store (App Review Guideline 3.1.3).
+      expect(text, isNot(contains('unhinderedlives.com')));
     });
 
     testWidgets('Next walks through every slide in order', (tester) async {

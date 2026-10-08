@@ -144,13 +144,12 @@ const List<WelcomeSlide> welcomeSlides = [
       WelcomeLine(
         BrassGlyphKind.check,
         'After that, Runners continue with a \$12-a-year subscription in the App Store, a '
-        'code from their church or organization, or a code someone gifted them at '
-        'unhinderedlives.com.',
+        'code from their church or organization, or a gift membership.',
       ),
       WelcomeLine(BrassGlyphKind.heart, 'Witnesses always use The Trellis free.'),
       WelcomeLine(
         BrassGlyphKind.people,
-        'Churches and organizations buy seats at unhinderedlives.com/trellis.',
+        'Churches and organizations can cover memberships for their people.',
       ),
     ],
   ),

@@ -207,7 +207,7 @@ const ruleOfLifeBaselines = [
         category: RuleCategory.workRest,
         title: 'keep a weekly Sabbath',
         frequency: RuleFrequency.weekly,
-        weeklyDays: {DateTime.monday},
+        weeklyDays: {DateTime.sunday},
       ),
     ],
   ),
