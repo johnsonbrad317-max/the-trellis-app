@@ -65,7 +65,15 @@ class _ContextualPrompt {
 _ContextualPrompt? _buildContextualPrompt(WatchedRunner runner) {
   // Never for a Runner who hasn't committed a Rule of Life (or has no rhythms):
   // an empty week there is not a tough one. See WatchedRunner.isStruggling.
-  if (runner.isStruggling) {
+  // One missed Anchor is a reason to reach out today, not a "tough week".
+  if (!runner.isGettingStarted && runner.anchorMissedYesterday != null) {
+    return _ContextualPrompt(
+      tone: _ContextualTone.struggling,
+      message: '${runner.name} missed an Anchor Rhythm yesterday. Suggest coffee to talk it '
+          'through.',
+    );
+  }
+  if (runner.isHardWeek) {
     return _ContextualPrompt(
       tone: _ContextualTone.struggling,
       message: '${runner.name} has had a tough week. Suggest grabbing lunch to talk it through.',

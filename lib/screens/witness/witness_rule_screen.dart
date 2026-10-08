@@ -47,8 +47,7 @@ _Nudge? _buildNudge(WatchedRunner runner) {
     );
   }
 
-  final weekRate = runner.weekRate;
-  if (weekRate != null && weekRate < 0.5) {
+  if (runner.isHardWeek) {
     return _Nudge(
       type: _NudgeType.struggling,
       message: "${runner.name} has kept fewer than half of this week's rhythms.",
@@ -64,7 +63,7 @@ _Nudge? _buildNudge(WatchedRunner runner) {
     );
   }
 
-  if (weekRate != null && weekRate > 0.9) {
+  if (runner.isStrongWeek) {
     return _Nudge(
       type: _NudgeType.thriving,
       message: '${runner.name} is having a strong week.',

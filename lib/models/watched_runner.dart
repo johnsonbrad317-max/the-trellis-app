@@ -207,12 +207,44 @@ class WatchedRunner {
     return due == 0 ? null : kept / due;
   }
 
-  /// A missed Anchor Rhythm yesterday, or under half of this week's rhythms
-  /// kept. Never true for a Runner who is still getting started.
+  /// How many of the trailing 7 days count toward the week: something was
+  /// due that day, after the Rule of Life was committed.
+  int get weekCountedDays {
+    var counted = 0;
+    for (var day = 0; day < 7; day++) {
+      if (ruleItems.any((item) => day < item.weekCompletion.length && item.weekCompletion[day] != null)) {
+        counted++;
+      }
+    }
+    return counted;
+  }
+
+  /// Days a week needs before it is called hard or strong. One day is not a
+  /// week: three rhythms with two missed on the first day is a bad day.
+  static const daysToJudgeWeek = 3;
+
+  /// This week's kept share once there are [daysToJudgeWeek] days of it;
+  /// null before that.
+  double? get judgedWeekRate =>
+      isGettingStarted || weekCountedDays < daysToJudgeWeek ? null : weekRate;
+
+  /// Under half of this week's rhythms kept, over at least three days.
+  bool get isHardWeek {
+    final rate = judgedWeekRate;
+    return rate != null && rate < 0.5;
+  }
+
+  /// Over 90% of this week's rhythms kept, over at least three days.
+  bool get isStrongWeek {
+    final rate = judgedWeekRate;
+    return rate != null && rate > 0.9;
+  }
+
+  /// A missed Anchor Rhythm yesterday, or a hard week. Never true for a
+  /// Runner who is still getting started.
   bool get isStruggling {
     if (isGettingStarted) return false;
-    final rate = weekRate;
-    return anchorMissedYesterday != null || (rate != null && rate < 0.5);
+    return anchorMissedYesterday != null || isHardWeek;
   }
 
   /// Days since this Runner was last heard from: their last check-in, or the

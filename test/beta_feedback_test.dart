@@ -339,6 +339,53 @@ void main() {
       expect(r.isStruggling, isTrue);
     });
 
+    test('one bad first day is not a hard week', () {
+      // Three rhythms, two missed on the only day checked in so far.
+      final r = runner(
+        [
+          rhythm(const [null, null, null, null, null, true, null]),
+          rhythm(const [null, null, null, null, null, false, null]),
+          rhythm(const [null, null, null, null, null, false, null]),
+        ],
+        lastCheckIn: today,
+      );
+      expect(r.weekRate, closeTo(1 / 3, 0.001));
+      expect(r.weekCountedDays, 1);
+      expect(r.isHardWeek, isFalse);
+      expect(r.isStruggling, isFalse);
+      expect(r.standing, RunnerStanding.thriving);
+    });
+
+    test('under half kept over three days is a hard week', () {
+      final r = runner(
+        [
+          rhythm(const [null, null, null, true, false, false, null]),
+          rhythm(const [null, null, null, false, false, false, null]),
+        ],
+        lastCheckIn: today,
+      );
+      expect(r.weekCountedDays, 3);
+      expect(r.isHardWeek, isTrue);
+    });
+
+    test('one perfect day is not yet a strong week', () {
+      final oneDay = runner([rhythm(const [null, null, null, null, null, true, null])],
+          lastCheckIn: today);
+      expect(oneDay.isStrongWeek, isFalse);
+      final threeDays = runner([rhythm(const [null, null, null, true, true, true, null])],
+          lastCheckIn: today);
+      expect(threeDays.isStrongWeek, isTrue);
+    });
+
+    test('a missed Anchor still counts on day one', () {
+      final r = runner(
+        [rhythm(const [null, null, null, null, null, false, null], anchor: true)],
+        lastCheckIn: today,
+      );
+      expect(r.isHardWeek, isFalse);
+      expect(r.isStruggling, isTrue);
+    });
+
     test('quiet is measured from the commit when that is more recent', () {
       final committedToday = runner([rhythm(const [null, null, null, null, null, null, null])],
           committedAt: today);
