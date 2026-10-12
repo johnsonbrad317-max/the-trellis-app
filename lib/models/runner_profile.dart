@@ -705,6 +705,23 @@ class RunnerProfile extends ChangeNotifier {
 
   Future<void>? _runnerDataLoad;
 
+  /// Fetches the Runner's Witnesses, prayers and meetings again — pull to
+  /// refresh, and coming back to the app — so a Witness who just paired
+  /// shows up without restarting. Shares a load already in flight; throws
+  /// if it fails (the screen keeps what it had).
+  Future<void> refreshRunnerData() {
+    if (isPreview) return Future<void>.value();
+    return _runnerDataLoad ??= () async {
+      try {
+        await _fetchRunnerData();
+        _runnerDataLoaded = true;
+      } finally {
+        _runnerDataLoad = null;
+      }
+      await refreshMembership();
+    }();
+  }
+
   Future<void> _fetchRunnerData() async {
 
     final witnessRows = await supabase
@@ -847,6 +864,21 @@ class RunnerProfile extends ChangeNotifier {
   }
 
   Future<void>? _witnessDataLoad;
+
+  /// The Witness side of [refreshRunnerData]: every Runner this account
+  /// walks with, fetched again.
+  Future<void> refreshWitnessData() {
+    if (isPreview) return Future<void>.value();
+    return _witnessDataLoad ??= () async {
+      unawaited(refreshWitnessNotices());
+      try {
+        await _fetchWitnessData();
+        _witnessDataLoaded = true;
+      } finally {
+        _witnessDataLoad = null;
+      }
+    }();
+  }
 
   Future<void> _fetchWitnessData() async {
 
@@ -1888,6 +1920,7 @@ class RunnerProfile extends ChangeNotifier {
     String? phoneNumber,
     String? scripture,
     bool shareWithWitnesses = false,
+    List<String>? sharedWith,
   }) async {
     _refuseInPreview();
     final row = await supabase
@@ -1900,6 +1933,9 @@ class RunnerProfile extends ChangeNotifier {
           'phone_number': phoneNumber,
           'scripture': scripture,
           'share_with_witnesses': shareWithWitnesses,
+          // Only sent when narrowed, so adding still works on a database
+          // without migration 033.
+          if (shareWithWitnesses && sharedWith != null) 'shared_with': sharedWith,
         })
         .select()
         .single();
@@ -1907,6 +1943,46 @@ class RunnerProfile extends ChangeNotifier {
     prayerItems.add(saved);
     notifyListeners();
     return saved.id;
+  }
+
+  /// Saves changes to one of this Runner's prayers. Sharing it (or adding a
+  /// Witness to who sees it) sends those Witnesses a notification
+  /// (migration 033).
+  Future<void> updatePrayerItem(
+    String prayerId, {
+    required PrayerCategory category,
+    required String title,
+    required String details,
+    String? phoneNumber,
+    String? scripture,
+    required bool shareWithWitnesses,
+    List<String>? sharedWith,
+  }) async {
+    _refuseInPreview();
+    final narrowed = shareWithWitnesses ? sharedWith : null;
+    await supabase.from('prayer_items').update({
+      'category': category.dbValue,
+      'title': title,
+      'details': details,
+      'phone_number': phoneNumber,
+      'scripture': scripture,
+      'share_with_witnesses': shareWithWitnesses,
+      'shared_with': narrowed,
+    }).eq('id', prayerId);
+    for (final item in prayerItems) {
+      if (item.id == prayerId) {
+        item
+          ..category = category
+          ..title = title
+          ..details = details
+          ..phoneNumber = phoneNumber
+          ..scripture = scripture
+          ..shareWithWitnesses = shareWithWitnesses
+          ..sharedWith = narrowed;
+        break;
+      }
+    }
+    notifyListeners();
   }
 
   Future<void> removePrayerItem(String id) async {

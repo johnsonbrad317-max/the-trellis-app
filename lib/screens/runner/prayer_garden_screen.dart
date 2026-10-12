@@ -85,13 +85,21 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
     );
   }
 
-  Future<void> _showAddPrayerDialog() async {
-    final titleController = TextEditingController();
-    final detailsController = TextEditingController();
-    final phoneController = TextEditingController();
-    final scriptureController = TextEditingController();
-    var category = PrayerCategory.people;
-    var shareWithWitnesses = false;
+  /// Adds a prayer, or with [editing] changes one: the same form, filled in.
+  /// (A person's photo is changed from the prayer's own sheet.)
+  Future<void> _showPrayerDialog({PrayerItem? editing}) async {
+    final titleController = TextEditingController(text: editing?.title);
+    final detailsController = TextEditingController(text: editing?.details);
+    final phoneController = TextEditingController(text: editing?.phoneNumber);
+    final scriptureController = TextEditingController(text: editing?.scripture);
+    var category = editing?.category ?? PrayerCategory.people;
+    var shareWithWitnesses = editing?.shareWithWitnesses ?? false;
+    // Who sees it when shared: every Witness unless it was narrowed before.
+    final witnesses = List.of(_profile.witnesses);
+    final allWitnessIds = {for (final w in witnesses) w.id};
+    final chosenWitnessIds = editing?.sharedWith == null
+        ? {...allWitnessIds}
+        : {...editing!.sharedWith!}.intersection(allWitnessIds);
     var isSaving = false;
     String? error;
 
@@ -103,7 +111,7 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
 
     await showBookplateForm<void>(
       context,
-      title: 'Add to Prayer Garden',
+      title: editing == null ? 'Add to Prayer Garden' : 'Edit Prayer',
       bodyBuilder: (dialogContext, setDialogState) {
         final textTheme = Theme.of(dialogContext).textTheme;
         return Column(
@@ -148,7 +156,7 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: titleController,
-              autofocus: true,
+              autofocus: editing == null,
               // A person's name is capitalised word by word; a situation's
               // title reads as a sentence.
               textCapitalization: category == PrayerCategory.people
@@ -161,7 +169,7 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
                 labelText: category == PrayerCategory.people ? 'Name' : 'Title',
               ),
             ),
-            if (category == PrayerCategory.people) ...[
+            if (category == PrayerCategory.people && editing == null) ...[
               const SizedBox(height: 8),
               PrayerPhotoRow(
                 name: titleController.text,
@@ -221,6 +229,35 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
               value: shareWithWitnesses,
               onChanged: (value) => setDialogState(() => shareWithWitnesses = value),
             ),
+            // With more than one Witness, choose which see it (all to start).
+            if (shareWithWitnesses && witnesses.length > 1) ...[
+              Text('Share with', style: textTheme.labelLarge),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final witness in witnesses)
+                    BookplateChip(
+                      label: witness.name.trim().split(RegExp(r'\s+')).first,
+                      selected: chosenWitnessIds.contains(witness.id),
+                      compact: true,
+                      onTap: () => setDialogState(() {
+                        if (!chosenWitnessIds.remove(witness.id)) chosenWitnessIds.add(witness.id);
+                      }),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Each one you choose gets a notification with this request.',
+                style: textTheme.bodySmall,
+              ),
+            ] else if (shareWithWitnesses && witnesses.isNotEmpty)
+              Text(
+                'Your Witness gets a notification with this request.',
+                style: textTheme.bodySmall,
+              ),
             if (error != null) ...[
               const SizedBox(height: 8),
               Text(error!, style: textTheme.bodySmall?.copyWith(color: AppColors.terracotta)),
@@ -230,7 +267,7 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
       },
       actionsBuilder: (dialogContext, setDialogState) => [
         BookplateButton(
-          label: 'Add',
+          label: editing == null ? 'Add' : 'Save',
           busy: isSaving,
           // The dialog closes only once the prayer is really saved: an empty
           // name or a failed write is explained here, with everything typed
@@ -247,24 +284,58 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
               });
               return;
             }
+            if (shareWithWitnesses && witnesses.length > 1 && chosenWitnessIds.isEmpty) {
+              setDialogState(() => error = 'Choose at least one Witness to share it with.');
+              return;
+            }
+            // Everyone chosen is stored as "all", so a Witness who pairs later
+            // sees it too.
+            final sharedWith = chosenWitnessIds.length == allWitnessIds.length
+                ? null
+                : chosenWitnessIds.toList();
+            final phone = category == PrayerCategory.people &&
+                    phoneController.text.trim().isNotEmpty
+                ? phoneController.text.trim()
+                : null;
+            final scripture =
+                scriptureController.text.trim().isEmpty ? null : scriptureController.text.trim();
             setDialogState(() {
               isSaving = true;
               error = null;
             });
+            if (editing != null) {
+              try {
+                await _profile.updatePrayerItem(
+                  editing.id,
+                  category: category,
+                  title: title,
+                  details: detailsController.text.trim(),
+                  phoneNumber: phone,
+                  scripture: scripture,
+                  shareWithWitnesses: shareWithWitnesses,
+                  sharedWith: sharedWith,
+                );
+              } catch (_) {
+                if (!dialogContext.mounted) return;
+                setDialogState(() {
+                  isSaving = false;
+                  error = "Couldn't save your changes. Check your connection and try again.";
+                });
+                return;
+              }
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              return;
+            }
             final String prayerId;
             try {
               prayerId = await _profile.addPrayerItem(
                 category: category,
                 title: title,
                 details: detailsController.text.trim(),
-                phoneNumber: category == PrayerCategory.people &&
-                        phoneController.text.trim().isNotEmpty
-                    ? phoneController.text.trim()
-                    : null,
-                scripture: scriptureController.text.trim().isEmpty
-                    ? null
-                    : scriptureController.text.trim(),
+                phoneNumber: phone,
+                scripture: scripture,
                 shareWithWitnesses: shareWithWitnesses,
+                sharedWith: sharedWith,
               );
             } catch (_) {
               if (!dialogContext.mounted) return;
@@ -313,7 +384,14 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
   void _showPrayerDetail(String prayerId) {
     showBookplateSheet<void>(
       context,
-      builder: (sheetContext) => _PrayerDetailSheet(profile: _profile, prayerId: prayerId),
+      builder: (sheetContext) => _PrayerDetailSheet(
+        profile: _profile,
+        prayerId: prayerId,
+        onEdit: (item) {
+          Navigator.of(sheetContext).pop();
+          _showPrayerDialog(editing: item);
+        },
+      ),
     );
   }
 
@@ -434,6 +512,7 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
                       isManaging: _isManaging,
                       onOpen: (item) => _showPrayerDetail(item.id),
                       onToggleAnswered: _toggleAnswered,
+                      onEdit: (item) => _showPrayerDialog(editing: item),
                       onRemove: _remove,
                     ),
                     const SizedBox(height: 12),
@@ -455,10 +534,10 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
               child: Semantics(
                 button: true,
                 label: 'Add to Prayer Garden',
-                onTap: _showAddPrayerDialog,
+                onTap: _showPrayerDialog,
                 excludeSemantics: true,
                 child: GestureDetector(
-                  onTap: _showAddPrayerDialog,
+                  onTap: _showPrayerDialog,
                   behavior: HitTestBehavior.opaque,
                   child: Container(
                     width: 56,
@@ -581,6 +660,7 @@ class _CategorySection extends StatefulWidget {
     required this.isManaging,
     required this.onOpen,
     required this.onToggleAnswered,
+    required this.onEdit,
     required this.onRemove,
   });
 
@@ -590,6 +670,7 @@ class _CategorySection extends StatefulWidget {
   final bool isManaging;
   final ValueChanged<PrayerItem> onOpen;
   final ValueChanged<PrayerItem> onToggleAnswered;
+  final ValueChanged<PrayerItem> onEdit;
   final ValueChanged<PrayerItem> onRemove;
 
   @override
@@ -700,6 +781,7 @@ class _CategorySectionState extends State<_CategorySection> {
                               isManaging: widget.isManaging,
                               onOpen: () => widget.onOpen(item),
                               onToggleAnswered: () => widget.onToggleAnswered(item),
+                              onEdit: () => widget.onEdit(item),
                               onRemove: () => widget.onRemove(item),
                             ),
                             const SizedBox(height: 12),
@@ -721,6 +803,7 @@ class _PrayerItemTile extends StatelessWidget {
     required this.isManaging,
     required this.onOpen,
     required this.onToggleAnswered,
+    required this.onEdit,
     required this.onRemove,
   });
 
@@ -731,6 +814,7 @@ class _PrayerItemTile extends StatelessWidget {
   /// prayer's detail, which is where its photo is added or changed.
   final VoidCallback onOpen;
   final VoidCallback onToggleAnswered;
+  final VoidCallback onEdit;
   final VoidCallback onRemove;
 
   Future<void> _textOrCall(BuildContext context, String phone) => launchOrNotify(
@@ -816,13 +900,18 @@ class _PrayerItemTile extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (isManaging)
+              if (isManaging) ...[
+                BrassGlyphButton(
+                  kind: BrassGlyphKind.pencil,
+                  semanticLabel: 'Edit',
+                  onPressed: onEdit,
+                ),
                 BrassGlyphButton(
                   kind: BrassGlyphKind.trash,
                   semanticLabel: 'Remove',
                   onPressed: onRemove,
-                )
-              else
+                ),
+              ] else
                 BrassGlyphButton(
                   kind: item.isAnswered ? BrassGlyphKind.undo : BrassGlyphKind.checkCircle,
                   semanticLabel: item.isAnswered ? 'Mark as active' : 'Mark as answered',
@@ -882,10 +971,13 @@ class _PrayerItemTile extends StatelessWidget {
 /// It watches the profile, so a photo added here appears in the sheet (and
 /// in the list behind it) the moment it is saved.
 class _PrayerDetailSheet extends StatefulWidget {
-  const _PrayerDetailSheet({required this.profile, required this.prayerId});
+  const _PrayerDetailSheet({required this.profile, required this.prayerId, required this.onEdit});
 
   final RunnerProfile profile;
   final String prayerId;
+
+  /// Closes the sheet and opens this prayer in the edit form.
+  final ValueChanged<PrayerItem> onEdit;
 
   @override
   State<_PrayerDetailSheet> createState() => _PrayerDetailSheetState();
@@ -1001,6 +1093,12 @@ class _PrayerDetailSheetState extends State<_PrayerDetailSheet> {
                 ),
               ),
             ],
+            const SizedBox(height: 20),
+            BookplateButton(
+              label: 'Edit',
+              variant: BookplateButtonVariant.secondary,
+              onPressed: _busy ? null : () => widget.onEdit(item),
+            ),
           ],
         );
       },

@@ -62,6 +62,7 @@ class PrayerItem {
     this.phoneNumber,
     this.scripture,
     this.shareWithWitnesses = false,
+    this.sharedWith,
     this.isAnswered = false,
     this.lastPrayedDate,
     this.answeredDate,
@@ -76,6 +77,7 @@ class PrayerItem {
         phoneNumber: row['phone_number'] as String?,
         scripture: row['scripture'] as String?,
         shareWithWitnesses: row['share_with_witnesses'] as bool? ?? false,
+        sharedWith: _sharedWithFrom(row['shared_with']),
         isAnswered: row['is_answered'] as bool? ?? false,
         lastPrayedDate: row['last_prayed_date'] == null
             ? null
@@ -90,6 +92,11 @@ class PrayerItem {
   /// has no `photo_path` column at all, and prayers must still load from it.
   static String? _photoPathFrom(Object? value) =>
       value is String && value.trim().isNotEmpty ? value : null;
+
+  /// Tolerant like [_photoPathFrom]: no `shared_with` column (before
+  /// migration 033) or null both mean every Witness.
+  static List<String>? _sharedWithFrom(Object? value) =>
+      value is List ? [for (final id in value) if (id is String) id] : null;
 
   // `photo_path` is deliberately not part of an insert: a photo can only be
   // uploaded once the row (and so its id) exists, and leaving the column out
@@ -117,6 +124,10 @@ class PrayerItem {
   String? phoneNumber;
   String? scripture;
   bool shareWithWitnesses;
+
+  /// Which Witnesses see it when [shareWithWitnesses] is on: their profile
+  /// ids, or null for all of them (including any who pair later).
+  List<String>? sharedWith;
   bool isAnswered;
   DateTime? lastPrayedDate;
 

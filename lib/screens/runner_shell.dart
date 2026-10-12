@@ -24,6 +24,7 @@ import 'runner/tabs/connect_tab.dart';
 import 'runner/tabs/dashboard_tab.dart';
 import 'runner/tabs/prayer_tab.dart';
 import 'runner/tabs/rule_of_life_tab.dart';
+import '../widgets/pull_to_refresh.dart';
 
 /// Primary navigation shell once a role has been chosen: bottom tab bar,
 /// hamburger settings drawer, and a role-switcher chip in the app bar.
@@ -84,6 +85,7 @@ class _RunnerShellState extends State<RunnerShell>
     // they would otherwise sit on their "nothing here yet" panels as if that
     // were true.
     runShellLoad(_profile.loadRunnerData).then((_) => _announceSeasonReopen());
+    refreshOnResume(_profile.refreshRunnerData);
     // Keeps this phone's check-in and prayer reminders in step with the
     // Runner's settings and with what they have already done today.
     _reminders = ReminderSync(_profile)..start();
@@ -207,7 +209,12 @@ class _RunnerShellState extends State<RunnerShell>
                             ),
                           ),
                         ),
-                      Expanded(child: pages[_tabIndex]),
+                      Expanded(
+                        child: PullToRefresh(
+                          onRefresh: _profile.refreshRunnerData,
+                          child: pages[_tabIndex],
+                        ),
+                      ),
                     ],
                   ),
           ),

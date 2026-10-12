@@ -54,6 +54,13 @@ class PrayerCompletionContact {
 
   final String label;
   final String phoneNumber;
+
+  /// How a text greets them: "Kevin" for "Kevin Barb". A prayer's title is
+  /// usually a full name; nobody texts a friend "Hey Kevin Barb".
+  String get firstName {
+    final words = label.trim().split(RegExp(r'\s+'));
+    return words.first.isEmpty ? label.trim() : words.first;
+  }
 }
 
 /// The shared "you finished your prayer queue" view — used identically by

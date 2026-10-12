@@ -108,4 +108,10 @@ class _AppScrollBehavior extends MaterialScrollBehavior {
         ...super.dragDevices,
         PointerDeviceKind.mouse,
       };
+
+  /// Every page can be pulled down, even one shorter than the screen — so
+  /// pull to refresh (PullToRefresh) works on a tab with little on it.
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      AlwaysScrollableScrollPhysics(parent: super.getScrollPhysics(context));
 }

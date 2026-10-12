@@ -57,7 +57,7 @@ class _DailyPrayerScreenState extends State<DailyPrayerScreen> {
         context,
         smsUri(
           contact.phoneNumber,
-          body: "Hey ${contact.label}, just wanted to let you know I've been praying for you "
+          body: "Hey ${contact.firstName}, just wanted to let you know I've been praying for you "
               'today. Hope you have a wonderful day!',
         ),
         unavailable: 'No messaging app is available on this device.',

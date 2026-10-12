@@ -19,6 +19,7 @@ import 'witness/witness_dashboard.dart';
 import 'witness/witness_pairing_code_screen.dart';
 import 'witness/witness_prayer_screen.dart';
 import 'witness/witness_rule_screen.dart';
+import '../widgets/pull_to_refresh.dart';
 
 /// Primary navigation shell for the Witness role: bottom tab bar, the same
 /// hamburger settings drawer as the Runner shell, and a role-switcher chip.
@@ -28,9 +29,13 @@ import 'witness/witness_rule_screen.dart';
 /// [RunnerProfile.selectedRunnerId] — that's the "Runner Global State" this
 /// shell reads from.
 class WitnessShell extends StatefulWidget {
-  const WitnessShell({super.key, required this.profile});
+  const WitnessShell({super.key, required this.profile, this.initialTabIndex = 0});
 
   final RunnerProfile profile;
+
+  /// Which bottom tab to open on (0 Runners, 1 Rule of Life, 2 Prayer,
+  /// 3 Connect) — a shared-prayer notification opens on Prayer.
+  final int initialTabIndex;
 
   @override
   State<WitnessShell> createState() => _WitnessShellState();
@@ -38,7 +43,7 @@ class WitnessShell extends StatefulWidget {
 
 class _WitnessShellState extends State<WitnessShell>
     with ShellDataLoad<WitnessShell> {
-  int _tabIndex = 0;
+  late int _tabIndex = widget.initialTabIndex;
 
   RunnerProfile get _profile => widget.profile;
 
@@ -72,6 +77,7 @@ class _WitnessShellState extends State<WitnessShell>
     // and until it lands — or if it fails — the dashboard would otherwise say
     // "No Runners yet" to a Witness who has Runners.
     runShellLoad(_profile.loadWitnessData);
+    refreshOnResume(_profile.refreshWitnessData);
     // "A Runner you walk with has left" notes (028) arrive with the Witness
     // load, or later; each is shown once, over whatever tab is open.
     _profile.addListener(_onProfileChanged);
@@ -178,7 +184,12 @@ class _WitnessShellState extends State<WitnessShell>
                       ),
                     ),
                   ),
-                Expanded(child: pages[_tabIndex]),
+                Expanded(
+                  child: PullToRefresh(
+                    onRefresh: _profile.refreshWitnessData,
+                    child: pages[_tabIndex],
+                  ),
+                ),
               ],
             ),
           ),

@@ -99,6 +99,17 @@ class NotificationRouter {
           _goToRunnerShell(navigator, profile);
         }
         break;
+      case 'prayer_shared':
+        // A Runner just shared a prayer with this Witness: fetch it, and open
+        // on the Prayer tab with that Runner selected.
+        profile.markWitnessDataStale();
+        _goToWitnessShell(
+          navigator,
+          profile,
+          selectRunnerId: data['runnerId'] as String?,
+          tabIndex: 2,
+        );
+        break;
       case 'account_deleted':
         // Only ever sent to a Witness whose paired Runner just deleted
         // their account — the pairing row is already gone (cascaded). Drop
@@ -117,11 +128,12 @@ class NotificationRouter {
     NavigatorState navigator,
     RunnerProfile profile, {
     required String? selectRunnerId,
+    int tabIndex = 0,
   }) {
     if (selectRunnerId != null) profile.selectWatchedRunner(selectRunnerId);
     if (profile.role != UserRole.witness) profile.setRole(UserRole.witness);
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => WitnessShell(profile: profile)),
+      MaterialPageRoute(builder: (_) => WitnessShell(profile: profile, initialTabIndex: tabIndex)),
       (route) => false,
     );
   }

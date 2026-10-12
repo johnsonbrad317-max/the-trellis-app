@@ -106,9 +106,30 @@ mixin ShellDataLoad<T extends StatefulWidget> on State<T> {
     if (mounted) setState(() {});
   }
 
+  AppLifecycleListener? _resumeListener;
+  DateTime _lastResumeRefresh = DateTime.now();
+
+  /// Fetches again whenever the app comes back to the front (at most once a
+  /// minute), so a Witness who paired while the phone sat in a pocket shows
+  /// up without closing and reopening the app. Fail-quiet: the page keeps
+  /// what it had.
+  void refreshOnResume(Future<void> Function() refresh) {
+    _resumeListener?.dispose();
+    _resumeListener = AppLifecycleListener(onResume: () {
+      final now = DateTime.now();
+      if (now.difference(_lastResumeRefresh) < const Duration(minutes: 1)) return;
+      _lastResumeRefresh = now;
+      unawaited(refresh().then(
+        (_) {},
+        onError: (Object error) => debugPrint('Refresh on resume failed: ${error.runtimeType}'),
+      ));
+    });
+  }
+
   @override
   void dispose() {
     _loadingLineTimer?.cancel();
+    _resumeListener?.dispose();
     super.dispose();
   }
 }

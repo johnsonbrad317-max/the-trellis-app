@@ -24,6 +24,9 @@
 //                       insert — 026; rows written daily by
 //                       generate_witness_nudges() and by the presence probe
 //                       below). Copy lives in witness_nudges.ts.
+//   - prayer_shared     a Runner shared a prayer with a Witness — adding it
+//                       shared, switching sharing on, or choosing that
+//                       Witness (prayer_share_notices insert — 033).
 //
 // And one scheduled action that is not a notification at all:
 //   - presence_probe    POST { "action": "presence_probe" } (pg_cron job
@@ -125,6 +128,7 @@ const EVENT_TYPES = [
   'support_request',
   'weekly_roll_up',
   'witness_nudge',
+  'prayer_shared',
 ] as const;
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -195,6 +199,8 @@ function validateRecord(eventType: EventType, record: Record<string, unknown>): 
     case 'witness_nudge':
       if (!isWitnessNudgeKind(record.kind)) return 'kind';
       return need('id', 'runner_id', 'witness_id');
+    case 'prayer_shared':
+      return need('id', 'prayer_item_id', 'runner_id', 'witness_id');
   }
 }
 
@@ -424,6 +430,42 @@ async function resolveWitnessNudge(
   }];
 }
 
+/// A Runner shared a prayer with this Witness (prayer_share_notices insert —
+/// one row, hence one notification, per Witness). The Runner chose to share
+/// it, so the request's title is in the message; its details are not.
+/// Skipped if the prayer is gone, answered or no longer shared by the time
+/// this runs. Honors the Witness's "Meeting & prayer requests" preference.
+async function resolvePrayerShared(
+  supabase: SupabaseClient,
+  record: Record<string, unknown>,
+): Promise<NotificationJob[]> {
+  const runnerId = record.runner_id as string;
+  const witnessId = record.witness_id as string;
+  const prayerId = record.prayer_item_id as string;
+
+  const [runnerName, prayer] = await Promise.all([
+    profileName(supabase, runnerId),
+    supabase
+      .from('prayer_items')
+      .select('title, share_with_witnesses, is_answered')
+      .eq('id', prayerId)
+      .maybeSingle(),
+  ]);
+  if (prayer.error) throw new Error(`prayer lookup failed: ${describeError(prayer.error)}`);
+  const row = prayer.data as { title?: unknown; share_with_witnesses?: unknown; is_answered?: unknown } | null;
+  if (!row || row.share_with_witnesses !== true || row.is_answered === true) return [];
+
+  const title = clean(row.title, 80);
+  const who = runnerName ?? 'A Runner you walk with';
+  return [{
+    profileId: witnessId,
+    title: 'Prayer Request',
+    body: title ? `${who} shared a prayer request: ${title}` : `${who} shared a prayer request.`,
+    data: { type: 'prayer_shared', runnerId, prayerId },
+    preference: 'meeting_requests',
+  }];
+}
+
 const RESOLVERS: Record<
   EventType,
   (supabase: SupabaseClient, record: Record<string, unknown>) => Promise<NotificationJob[]>
@@ -435,6 +477,7 @@ const RESOLVERS: Record<
   support_request: resolveSupportRequest,
   weekly_roll_up: resolveWeeklyRollUp,
   witness_nudge: resolveWitnessNudge,
+  prayer_shared: resolvePrayerShared,
 };
 
 // ---------------------------------------------------------------------------
