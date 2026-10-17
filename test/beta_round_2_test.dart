@@ -130,6 +130,7 @@ void main() {
       category: RuleCategory.abidingPrayer,
       title: 'pray',
       createdAt: DateTime(2025, 12, 20),
+      isAnchorRhythm: true,
     );
 
     test('the first week of a new season is open; the rest of a season is set', () {

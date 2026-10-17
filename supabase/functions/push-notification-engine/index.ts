@@ -27,6 +27,8 @@
 //   - prayer_shared     a Runner shared a prayer with a Witness — adding it
 //                       shared, switching sharing on, or choosing that
 //                       Witness (prayer_share_notices insert — 033).
+//   - rhythm_removed    a Runner removed a rhythm that had settled
+//                       (witness_notices insert of kind rhythm_removed — 034).
 //
 // And one scheduled action that is not a notification at all:
 //   - presence_probe    POST { "action": "presence_probe" } (pg_cron job
@@ -129,6 +131,7 @@ const EVENT_TYPES = [
   'weekly_roll_up',
   'witness_nudge',
   'prayer_shared',
+  'rhythm_removed',
 ] as const;
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -201,6 +204,9 @@ function validateRecord(eventType: EventType, record: Record<string, unknown>): 
       return need('id', 'runner_id', 'witness_id');
     case 'prayer_shared':
       return need('id', 'prayer_item_id', 'runner_id', 'witness_id');
+    case 'rhythm_removed':
+      if (record.kind !== 'rhythm_removed') return 'kind';
+      return need('id', 'witness_id', 'runner_id');
   }
 }
 
@@ -466,6 +472,22 @@ async function resolvePrayerShared(
   }];
 }
 
+/// A Runner removed a rhythm that had settled (a witness_notices row of kind
+/// rhythm_removed — 034). Like every lock-screen message here it never names
+/// the rhythm; the note the app shows once does.
+function resolveRhythmRemoved(
+  _supabase: SupabaseClient,
+  record: Record<string, unknown>,
+): Promise<NotificationJob[]> {
+  const first = clean(record.runner_first_name, 40) ?? 'Your Runner';
+  return Promise.resolve([{
+    profileId: record.witness_id as string,
+    title: 'Rule of Life',
+    body: `${first} removed a rhythm from their Rule of Life.`,
+    data: { type: 'rhythm_removed', runnerId: record.runner_id as string },
+  }]);
+}
+
 const RESOLVERS: Record<
   EventType,
   (supabase: SupabaseClient, record: Record<string, unknown>) => Promise<NotificationJob[]>
@@ -478,6 +500,7 @@ const RESOLVERS: Record<
   weekly_roll_up: resolveWeeklyRollUp,
   witness_nudge: resolveWitnessNudge,
   prayer_shared: resolvePrayerShared,
+  rhythm_removed: resolveRhythmRemoved,
 };
 
 // ---------------------------------------------------------------------------

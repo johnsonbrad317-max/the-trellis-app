@@ -139,13 +139,26 @@ void main() {
   // ---------------------------------------------------------------------------
   group('RuleItem settle period', () {
     final committed = DateTime(2026, 10, 1, 9);
-    RuleItem item({DateTime? createdAt, DateTime? unlockedUntil}) => RuleItem(
+    // Only an Anchor Rhythm is ever set (migration 034).
+    RuleItem item({DateTime? createdAt, DateTime? unlockedUntil, bool anchor = true}) => RuleItem(
           id: 'r',
           category: RuleCategory.abidingPrayer,
           title: 'pray',
           createdAt: createdAt,
           unlockedUntil: unlockedUntil,
+          isAnchorRhythm: anchor,
         );
+
+    test('any other rhythm settles but is never set', () {
+      final rhythm = item(createdAt: DateTime(2026, 9, 20), anchor: false);
+      final later = DateTime(2026, 11, 1);
+      expect(rhythm.isSetAt(later, ruleCommittedAt: committed, hasWitness: true), isFalse);
+      expect(rhythm.isSettledAt(later, ruleCommittedAt: committed, hasWitness: true), isTrue);
+      expect(
+        rhythm.isSettledAt(DateTime(2026, 10, 3), ruleCommittedAt: committed, hasWitness: true),
+        isFalse,
+      );
+    });
 
     test('free for seven days after committing, then set', () {
       final rhythm = item(createdAt: DateTime(2026, 9, 20));

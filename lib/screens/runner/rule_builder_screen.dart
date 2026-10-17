@@ -46,7 +46,7 @@ const _rhythmPresets = {
   ],
   RuleCategory.workRest: [
     'Observe a 24-Hour Sabbath',
-    'Be Done with Work by 6 PM',
+    'Finish Work by 6 PM',
     'Practice Complete Integrity in the Workplace',
     'Take a Lunch Break Away from the Desk',
     'Keep the Phone Out of the Bedroom at Night',
@@ -75,15 +75,17 @@ class RuleBuilderScreen extends StatelessWidget {
     final settlesAt = profile.ruleSettlesAt;
     if (settlesAt != null) {
       return 'Your Rule of Life is committed. Until ${_formatDay(settlesAt)}, you can still '
-          'change or remove any rhythm freely. After that, changing or removing one needs '
-          "your Witness's approval. You can always add a rhythm.";
+          'change or remove any rhythm freely. After that, your Anchor Rhythms are set: '
+          "changing one needs your Witness's approval. Other rhythms stay yours to change; "
+          'your Witness hears if you remove one. You can always add a rhythm.';
     }
     if (profile.witnesses.isEmpty) {
       return 'Your Rule of Life is committed. You can always add a rhythm — and with no '
           'Witness yet, you can still change one yourself.';
     }
-    return 'Your Rule of Life is set. You can always add a rhythm; changing or removing one '
-        'needs your Witness\'s approval (a rhythm added later has its own first week).';
+    return "Your Anchor Rhythms are set: changing or removing one needs your Witness's "
+        'approval. Other rhythms stay yours to change, and your Witness hears if you remove '
+        'one. You can always add a rhythm (each has its own first week).';
   }
 
   static const _months = [
@@ -401,8 +403,8 @@ class RuleBuilderScreen extends StatelessWidget {
       title: 'Your Rule of Life is Set',
       message: 'Your first week is a trial fit. Until '
           "${_formatDay(DateTime.now().add(ruleSettlePeriod))}, you can change or remove any "
-          "rhythm as you learn what's realistic. After that, your Witness helps hold them in "
-          'place.\n\n'
+          "rhythm as you learn what's realistic. After that, your Witness helps hold your "
+          'Anchor Rhythms in place.\n\n'
           // The pricing as the welcome deck states it: two free weeks from
           // sign-up, no card; then a subscription or a code.
           'Your first two weeks of The Trellis are free — no card needed. After that, keep '
@@ -864,11 +866,12 @@ class _RuleItemTile extends StatelessWidget {
   final RuleItem item;
   final RunnerProfile profile;
 
-  /// A rhythm is "set" once its first week has passed (see
+  /// An Anchor Rhythm is "set" once its first week has passed (see
   /// RunnerProfile.isRuleItemSet): from then on it can't be changed or removed
   /// without a Witness's approval — which closes the loophole of quietly
-  /// moving a weekly rhythm's days, or un-anchoring one, to avoid ever
-  /// missing it. The database enforces the same rule.
+  /// moving its days, or un-anchoring it, to avoid ever missing it. Any other
+  /// rhythm stays the Runner's to change; removing one that has settled tells
+  /// their Witness. The database enforces the same rule (migration 034).
   bool get _isSet => !item.isChurchMandated && profile.isRuleItemSet(item);
 
   /// DNA Rhythms are locked at all times — the Runner didn't choose them, so
@@ -936,6 +939,19 @@ class _RuleItemTile extends StatelessWidget {
   }
 
   Future<void> _remove(BuildContext context) async {
+    if (profile.removalNotifiesWitness(item)) {
+      final witnesses = profile.witnesses.length == 1 ? 'Your Witness' : 'Your Witnesses';
+      final confirmed = await showBookplateConfirm(
+        context,
+        title: 'Remove This Rhythm?',
+        message: '$witnesses will see that you removed "${item.displayTitle}". Your past '
+            'check-ins for it are kept in your season.',
+        confirmLabel: 'Remove',
+        cancelLabel: 'Keep It',
+        destructive: true,
+      );
+      if (!confirmed || !context.mounted) return;
+    }
     try {
       await profile.removeRuleItem(item.id);
     } catch (_) {
@@ -967,6 +983,61 @@ class _RuleItemTile extends StatelessWidget {
     }
     if (!context.mounted) return;
     showBookplateNotice(context, 'Merged — your check-ins now count toward "${into.title}".');
+  }
+
+  /// Renames this rhythm in place — no need to remove it and start over.
+  Future<void> _rename(BuildContext context) async {
+    final controller = TextEditingController(text: item.title);
+    String? error;
+    final confirmed = await showBookplateForm<bool>(
+      context,
+      title: 'Rename Rhythm',
+      bodyBuilder: (dialogContext, setDialogState) {
+        final textTheme = Theme.of(dialogContext).textTheme;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: item.isThrowOff ? 'Avoid…' : 'Rhythm',
+                prefixText: item.isThrowOff ? 'Avoid ' : null,
+              ),
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Text(error!, style: textTheme.bodySmall?.copyWith(color: AppColors.terracotta)),
+            ],
+          ],
+        );
+      },
+      actionsBuilder: (dialogContext, setDialogState) => [
+        BookplateButton(
+          label: 'Save',
+          onPressed: () {
+            if (controller.text.trim().isEmpty) {
+              setDialogState(() => error = 'Give the rhythm a name.');
+              return;
+            }
+            Navigator.of(dialogContext).pop(true);
+          },
+        ),
+        BookplateButton(
+          label: 'Cancel',
+          variant: BookplateButtonVariant.secondary,
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+        ),
+      ],
+    );
+    var title = controller.text.trim();
+    disposeAfterBookplateClose([controller]);
+    if (confirmed != true || !context.mounted) return;
+    if (item.isThrowOff && title.toLowerCase().startsWith('avoid ')) title = title.substring(6).trim();
+    if (title.isEmpty || title == item.title) return;
+    await _edit(context, (i) => i.title = title);
   }
 
   static String _formatUnlockDeadline(DateTime until) {
@@ -1053,11 +1124,26 @@ class _RuleItemTile extends StatelessWidget {
                             onPressed: () => _requestUnlock(context),
                           )
                   else
-                    BookplateButton(
-                      label: 'Remove',
-                      compact: true,
-                      variant: BookplateButtonVariant.danger,
-                      onPressed: () => _remove(context),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        // A church rhythm keeps the church's name for it.
+                        if (!item.isChurchMandated)
+                          BookplateButton(
+                            label: 'Rename',
+                            compact: true,
+                            variant: BookplateButtonVariant.secondary,
+                            onPressed: () => _rename(context),
+                          ),
+                        BookplateButton(
+                          label: 'Remove',
+                          compact: true,
+                          variant: BookplateButtonVariant.danger,
+                          onPressed: () => _remove(context),
+                        ),
+                      ],
                     ),
                 ],
               ),
@@ -1163,8 +1249,8 @@ class _RuleItemTile extends StatelessWidget {
             if (_isSet) ...[
               const SizedBox(height: 10),
               Text(
-                'This rhythm is set. To change or remove it, ask a Witness to unlock it — '
-                'their approval opens it for a day.',
+                'This Anchor Rhythm is set. To change or remove it, ask a Witness to unlock '
+                'it — their approval opens it for a day.',
                 style: textTheme.bodySmall?.copyWith(
                   color: AppColors.antiqueBrass,
                   fontStyle: FontStyle.italic,

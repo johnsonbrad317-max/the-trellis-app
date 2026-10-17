@@ -99,6 +99,11 @@ class NotificationRouter {
           _goToRunnerShell(navigator, profile);
         }
         break;
+      case 'rhythm_removed':
+        // The note saying which rhythm arrives with the next Witness load.
+        profile.markWitnessDataStale();
+        _goToWitnessShell(navigator, profile, selectRunnerId: data['runnerId'] as String?);
+        break;
       case 'prayer_shared':
         // A Runner just shared a prayer with this Witness: fetch it, and open
         // on the Prayer tab with that Runner selected.

@@ -274,11 +274,19 @@ class RuleItem {
   bool isUnlockedAt(DateTime now) => unlockedUntil?.isAfter(now) ?? false;
 
   /// Whether this rhythm is "set" — changing or removing it needs a Witness's
-  /// approval. Set means: the Rule of Life is committed, the settle period
-  /// has passed, there IS a Witness to ask (with none, nobody could approve,
-  /// so the Runner stays free to edit), and no approval is currently running.
-  /// (A church-mandated rhythm is locked separately, at all times.)
-  bool isSetAt(DateTime now, {required DateTime? ruleCommittedAt, required bool hasWitness}) {
+  /// approval. Only an Anchor Rhythm is ever set (migration 034): every other
+  /// rhythm stays the Runner's to change, and removing one that has settled
+  /// tells their Witness. (A church-mandated rhythm is locked separately, at
+  /// all times.)
+  bool isSetAt(DateTime now, {required DateTime? ruleCommittedAt, required bool hasWitness}) =>
+      isAnchorRhythm && isSettledAt(now, ruleCommittedAt: ruleCommittedAt, hasWitness: hasWitness);
+
+  /// Whether this rhythm has settled into the Rule of Life: it is committed,
+  /// the settle period has passed, there IS a Witness (with none, nobody could
+  /// approve or be told), no season-end week is open, and no approval is
+  /// running. An Anchor that has settled is set; any other rhythm that has
+  /// settled can still be changed, but removing it tells the Witness.
+  bool isSettledAt(DateTime now, {required DateTime? ruleCommittedAt, required bool hasWitness}) {
     final settles = settlesAt(ruleCommittedAt);
     if (settles == null || now.isBefore(settles)) return false;
     if (!hasWitness) return false;
@@ -321,6 +329,10 @@ class RuleItem {
     return List.generate(words.length, (i) {
       final word = words[i];
       if (word.isEmpty) return word;
+      // An abbreviation already in capitals stays that way: "6 PM", "AA".
+      if (word.length > 1 && word == word.toUpperCase() && word != word.toLowerCase()) {
+        return word;
+      }
       final lower = word.toLowerCase();
       if (i != 0 && _minorWords.contains(lower)) return lower;
       return '${lower[0].toUpperCase()}${lower.substring(1)}';

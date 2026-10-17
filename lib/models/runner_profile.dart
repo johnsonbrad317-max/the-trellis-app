@@ -1847,6 +1847,17 @@ class RunnerProfile extends ChangeNotifier {
         hasWitness: witnesses.isNotEmpty,
       );
 
+  /// Whether removing [item] tells this Runner's Witness (migration 034): it
+  /// has settled, though not being an Anchor it is not set. See
+  /// [RuleItem.isSettledAt].
+  bool removalNotifiesWitness(RuleItem item) => hasCommittedRule &&
+      !item.isChurchMandated &&
+      item.isSettledAt(
+        DateTime.now(),
+        ruleCommittedAt: ruleCommittedAt,
+        hasWitness: witnesses.isNotEmpty,
+      );
+
   /// When the open season-end window closes — a season (180 days) after
   /// committing, the Rule of Life opens for a week to be tweaked or left as
   /// it is — or null when no such window is open. See [isRuleSeasonReopenAt].

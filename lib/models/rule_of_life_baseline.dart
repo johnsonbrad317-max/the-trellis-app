@@ -169,7 +169,7 @@ const ruleOfLifeBaselines = [
       ),
       BaselineRuleItem(
         category: RuleCategory.workRest,
-        title: 'be done with work by 6 PM',
+        title: 'finish work by 6 PM',
         frequency: RuleFrequency.weekly,
         weeklyDays: _weekdays,
       ),
