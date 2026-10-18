@@ -2594,8 +2594,8 @@ class RunnerProfile extends ChangeNotifier {
   /// and every method that would read or write Supabase either returns
   /// quietly (loads) or throws [PreviewModeException] (writes). Never set as
   /// [current].
-  factory RunnerProfile.preview() {
-    final now = DateTime.now();
+  factory RunnerProfile.preview({DateTime? now}) {
+    now ??= DateTime.now();
     final roster = PreviewSampleData.roster();
     final ruleItems = PreviewSampleData.ruleItems(now);
     final history = PreviewSampleData.checkInHistory(ruleItems, now);

@@ -89,8 +89,19 @@ void main() {
       expect(profile.prayerItems.length, greaterThanOrEqualTo(5));
       expect(profile.meetingRequests, hasLength(2));
       expect(profile.analyticsLoaded, isTrue);
-      expect(profile.analytics.score, closeTo(0.8, 0.05));      expect(profile.watchedRunners, hasLength(2));
+      expect(profile.analytics.score, closeTo(0.83, 0.05));
+      expect(profile.watchedRunners, hasLength(2));
       expect(profile.watchedRunners.where((r) => r.missedAnchorAlert != null), hasLength(1));
+    });
+
+    test('her season reads about the same whatever the date', () {
+      // The sample check-ins follow the calendar, so the score moves a little
+      // with the weekday (0.81–0.86 across a year). CI runs in UTC, so a test
+      // run late on a Saturday in Kansas City is a Sunday there.
+      for (var day = 0; day < 366; day++) {
+        final now = DateTime(2026, 1, 1, 12).add(Duration(days: day));
+        expect(RunnerProfile.preview(now: now).analytics.score, closeTo(0.83, 0.05), reason: '$now');
+      }
     });
 
     test('loads return quietly and writes refuse, without reaching Supabase', () async {
