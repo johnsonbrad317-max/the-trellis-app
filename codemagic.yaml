@@ -232,10 +232,12 @@ workflows:
         # Uploads the build and makes it available in TestFlight. Internal
         # testers get it as soon as Apple finishes processing.
         submit_to_testflight: true
-        # External testing: create the group in App Store Connect > TestFlight,
-        # fill in Test Information (Beta App Review needs it), then uncomment.
-        # beta_groups:
-        #   - Beta Testers
+        # External testers get each build too, without adding it by hand in
+        # App Store Connect. Must match the TestFlight group's name exactly.
+        # (The internal group shares this name; internal testers get builds
+        # automatically either way.)
+        beta_groups:
+          - Trellis Beta - Redeemer JOCO
         submit_to_app_store: false
 
   # ===========================================================================
