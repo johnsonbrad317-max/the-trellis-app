@@ -38,6 +38,7 @@ When someone adds a verse to an "I prayed for you" text, they pick a theme and t
 
 ## Comfort
 
+- **Habakkuk 3:17–19** (always offered first): Though the fig tree does not bud and no fruit is on the vines, though the olive crop fails and the fields produce no food, though the sheep are cut off from the fold and no cattle are in the stalls, yet I will exult in the LORD; I will rejoice in the God of my salvation! GOD the Lord is my strength; He makes my feet like those of a deer; He makes me walk upon the heights!
 - **Psalm 34:18**: The LORD is near to the brokenhearted; He saves the contrite in spirit.
 - **Matthew 5:4**: Blessed are those who mourn, for they will be comforted.
 - **2 Corinthians 1:3–4**: Blessed be the God and Father of our Lord Jesus Christ, the Father of compassion and the God of all comfort, who comforts us in all our troubles, so that we can comfort those in any trouble with the comfort we ourselves have received from God.

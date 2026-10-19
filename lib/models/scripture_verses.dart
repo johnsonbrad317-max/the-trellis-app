@@ -1,4 +1,4 @@
-// GENERATED from the Berean Standard Bible (public domain, BereanBible.com).
+// From the Berean Standard Bible (public domain, BereanBible.com), word for word.
 // The owner reviews this list (docs/scripture-verses-for-review.md); edit the
 // passages here, keeping each to three verses or fewer so a text stays short.
 // ignore_for_file: lines_longer_than_80_chars
@@ -33,6 +33,10 @@ class ScripturePassage {
   /// The verse text, word for word.
   final String text;
 }
+
+/// Themes whose first passage is always the one offered first. In every
+/// other theme the starting passage rotates by day and person.
+const Set<ScriptureTheme> themesLedByFirstPassage = {ScriptureTheme.comfort};
 
 /// Every theme's passages, in the order they are offered.
 const Map<ScriptureTheme, List<ScripturePassage>> scriptureByTheme = {
@@ -127,6 +131,13 @@ const Map<ScriptureTheme, List<ScripturePassage>> scriptureByTheme = {
     ),
   ],
   ScriptureTheme.comfort: [
+    // The owner's choice: always offered first for Comfort (see
+    // themesLedByFirstPassage). Habakkuk 3:19's closing note ("For the
+    // choirmaster. With stringed instruments.") is left off.
+    ScripturePassage(
+      'Habakkuk 3:17–19',
+      'Though the fig tree does not bud and no fruit is on the vines, though the olive crop fails and the fields produce no food, though the sheep are cut off from the fold and no cattle are in the stalls, yet I will exult in the LORD; I will rejoice in the God of my salvation! GOD the Lord is my strength; He makes my feet like those of a deer; He makes me walk upon the heights!',
+    ),
     ScripturePassage(
       'Psalm 34:18',
       'The LORD is near to the brokenhearted; He saves the contrite in spirit.',

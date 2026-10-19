@@ -109,6 +109,15 @@ void main() {
       expect(sent, endsWith('($secondRef)'));
     });
 
+    testWidgets('Comfort always opens on Habakkuk 3:17–19', (tester) async {
+      expect(scriptureByTheme[ScriptureTheme.comfort]!.first.reference, 'Habakkuk 3:17–19');
+      await open(tester);
+      await tester.tap(find.text('Comfort'));
+      await tester.pumpAndSettle();
+      expect(find.text('Habakkuk 3:17–19, BSB'), findsOneWidget);
+      expect(find.textContaining('Though the fig tree does not bud'), findsOneWidget);
+    });
+
     testWidgets("a prayer's own scripture is offered first", (tester) async {
       await open(tester, saved: 'Philippians 4:6-7');
       expect(find.text('From this prayer'), findsOneWidget);

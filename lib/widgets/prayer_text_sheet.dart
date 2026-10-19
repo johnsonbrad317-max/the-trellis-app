@@ -57,7 +57,9 @@ class _PrayerTextSheetState extends State<_PrayerTextSheet> {
     setState(() {
       _useSaved = false;
       _theme = theme;
-      _index = firstPassageIndex(scriptureByTheme[theme]!, widget.firstName, DateTime.now());
+      _index = themesLedByFirstPassage.contains(theme)
+          ? 0
+          : firstPassageIndex(scriptureByTheme[theme]!, widget.firstName, DateTime.now());
     });
   }
 
