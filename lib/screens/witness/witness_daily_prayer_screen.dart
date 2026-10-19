@@ -11,6 +11,7 @@ import '../../widgets/brass_glyph.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/launch_link.dart';
 import '../../widgets/prayer_completion_view.dart';
+import '../../widgets/prayer_text_sheet.dart';
 import '../../widgets/trellis_scaffold.dart';
 
 /// A swipeable flashcard walk-through of today's intercession queue for one
@@ -74,15 +75,21 @@ class _WitnessDailyPrayerScreenState extends State<WitnessDailyPrayerScreen> {
   /// Opens Messages to the Runner with a short "I prayed for you" draft. It
   /// never names a request — a text shows on a lock screen, and what someone
   /// asked prayer for is theirs to keep private.
-  Future<void> _textRunner(PrayerCompletionContact contact) => launchOrNotify(
-        context,
-        smsUri(
-          contact.phoneNumber,
-          // Says when, and varies day to day (lib/models/prayer_texts.dart).
-          body: witnessPrayedText(firstName: widget.runnerFirstName, now: DateTime.now()),
-        ),
-        unavailable: 'No messaging app is available on this device.',
-      );
+  /// The draft says when, and varies day to day (lib/models/prayer_texts.dart);
+  /// the Witness can add a verse before Messages opens.
+  Future<void> _textRunner(PrayerCompletionContact contact) async {
+    final body = await showPrayerTextSheet(
+      context,
+      firstName: widget.runnerFirstName,
+      message: witnessPrayedText(firstName: widget.runnerFirstName, now: DateTime.now()),
+    );
+    if (body == null || !mounted) return;
+    await launchOrNotify(
+      context,
+      smsUri(contact.phoneNumber, body: body),
+      unavailable: 'No messaging app is available on this device.',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

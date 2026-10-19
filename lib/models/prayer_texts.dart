@@ -16,6 +16,8 @@
 /// and every word can be changed before sending.
 library;
 
+import 'scripture_verses.dart';
+
 /// The part of the day a text is written in.
 enum DayPart { morning, afternoon, evening, night }
 
@@ -99,6 +101,50 @@ String witnessPrayedText({required String firstName, required DateTime now}) {
         'Grateful to walk with you in this.',
   ];
   return _pick(versions, name, now);
+}
+
+/// [message] with a verse after it: a line leading into it (rotating, like
+/// the texts), then the passage and its reference. The lead-ins never repeat
+/// the time of day — the message before them has already said it.
+String withScripture(
+  String message,
+  ScripturePassage passage, {
+  required String firstName,
+  required DateTime now,
+}) {
+  final leadIns = [
+    'Praying this one over you:',
+    'This passage has been encouraging me, and I thought of you:',
+    'Holding onto this for you:',
+    'A verse I prayed for you:',
+    'Something to hold onto:',
+    'This is my prayer for you:',
+  ];
+  final leadIn = _pick(leadIns, _name(firstName), now, salt: 3);
+  final verse = passage.text.isEmpty
+      ? passage.reference
+      : '"${passage.text}" (${passage.reference}, BSB)';
+  return '$message\n\n$leadIn\n$verse';
+}
+
+/// Where to start in a theme's passages for this person today, so the first
+/// verse offered is not always the same one. "Different verse" moves on from
+/// here.
+int firstPassageIndex(List<ScripturePassage> passages, String firstName, DateTime now) =>
+    passages.isEmpty ? 0 : passages.indexOf(_pick(passages, _name(firstName), now, salt: 11));
+
+/// A prayer's own scripture (a reference typed on its card, e.g.
+/// "Philippians 4:6-7") as a passage: with its BSB text when it is one of
+/// ours, otherwise the reference alone.
+ScripturePassage passageForReference(String reference) {
+  String key(String r) => r.toLowerCase().replaceAll(RegExp(r'[\s–—-]+'), '');
+  final wanted = key(reference);
+  for (final passages in scriptureByTheme.values) {
+    for (final passage in passages) {
+      if (key(passage.reference) == wanted) return passage;
+    }
+  }
+  return ScripturePassage(reference.trim(), '');
 }
 
 String _name(String firstName) {

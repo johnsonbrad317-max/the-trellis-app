@@ -9,6 +9,7 @@ import '../../widgets/gradient_button.dart';
 import '../../widgets/launch_link.dart';
 import '../../widgets/prayer_card.dart';
 import '../../widgets/prayer_completion_view.dart';
+import '../../widgets/prayer_text_sheet.dart';
 import '../../widgets/trellis_scaffold.dart';
 
 /// A swipeable flashcard walk-through of today's prayer queue. Swipe a card
@@ -54,15 +55,22 @@ class _DailyPrayerScreenState extends State<DailyPrayerScreen> {
     setState(() => _remaining.removeWhere((i) => i.id == item.id));
   }
 
-  Future<void> _sendEncouragement(PrayerCompletionContact contact) => launchOrNotify(
-        context,
-        smsUri(
-          contact.phoneNumber,
-          // Says when, and varies day to day (lib/models/prayer_texts.dart).
-          body: prayedForYouText(firstName: contact.firstName, now: DateTime.now()),
-        ),
-        unavailable: 'No messaging app is available on this device.',
-      );
+  /// Drafts the text (it says when, and varies day to day — see
+  /// lib/models/prayer_texts.dart), offers to add a verse, then opens Messages.
+  Future<void> _sendEncouragement(PrayerCompletionContact contact) async {
+    final body = await showPrayerTextSheet(
+      context,
+      firstName: contact.firstName,
+      message: prayedForYouText(firstName: contact.firstName, now: DateTime.now()),
+      savedScripture: contact.scripture,
+    );
+    if (body == null || !mounted) return;
+    await launchOrNotify(
+      context,
+      smsUri(contact.phoneNumber, body: body),
+      unavailable: 'No messaging app is available on this device.',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +94,11 @@ class _DailyPrayerScreenState extends State<DailyPrayerScreen> {
                   verse: _completionVerse,
                   contacts: [
                     for (final item in _prayedForWithPhone)
-                      PrayerCompletionContact(label: item.title, phoneNumber: item.phoneNumber!),
+                      PrayerCompletionContact(
+                        label: item.title,
+                        phoneNumber: item.phoneNumber!,
+                        scripture: item.scripture,
+                      ),
                   ],
                   onTextContact: _sendEncouragement,
                 ),

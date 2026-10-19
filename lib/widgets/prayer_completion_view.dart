@@ -50,10 +50,14 @@ PrayerVerse pickRandomPrayerVerse() =>
 /// Someone a Runner or Witness can send a quick "I prayed for you" text to,
 /// offered once their queue is finished.
 class PrayerCompletionContact {
-  const PrayerCompletionContact({required this.label, required this.phoneNumber});
+  const PrayerCompletionContact({required this.label, required this.phoneNumber, this.scripture});
 
   final String label;
   final String phoneNumber;
+
+  /// The scripture saved on their prayer card, if any — offered first when
+  /// adding a verse to the text.
+  final String? scripture;
 
   /// How a text greets them: "Kevin" for "Kevin Barb". A prayer's title is
   /// usually a full name; nobody texts a friend "Hey Kevin Barb".
