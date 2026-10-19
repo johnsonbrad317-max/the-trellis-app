@@ -237,7 +237,7 @@ workflows:
         # (The internal group shares this name; internal testers get builds
         # automatically either way.)
         beta_groups:
-          - Trellis Beta - Redeemer JOCO
+          - "Trellis Beta - Redeemer JOCO"
         submit_to_app_store: false
 
   # ===========================================================================
