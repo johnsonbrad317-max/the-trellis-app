@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/prayer_item.dart';
+import '../../models/prayer_texts.dart';
 import '../../models/runner_profile.dart';
 import '../../widgets/bookplate_app_bar.dart';
 import '../../widgets/bookplate_dialog.dart';
@@ -57,8 +58,8 @@ class _DailyPrayerScreenState extends State<DailyPrayerScreen> {
         context,
         smsUri(
           contact.phoneNumber,
-          body: "Hey ${contact.firstName}, just wanted to let you know I've been praying for you "
-              'today. Hope you have a wonderful day!',
+          // Says when, and varies day to day (lib/models/prayer_texts.dart).
+          body: prayedForYouText(firstName: contact.firstName, now: DateTime.now()),
         ),
         unavailable: 'No messaging app is available on this device.',
       );

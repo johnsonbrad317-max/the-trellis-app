@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/runner_profile.dart';
+import '../../models/prayer_texts.dart';
 import '../../models/watched_prayer_item.dart';
-import '../../models/witness_messages.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/bookplate_app_bar.dart';
 import '../../widgets/bookplate_dialog.dart';
@@ -78,7 +78,8 @@ class _WitnessDailyPrayerScreenState extends State<WitnessDailyPrayerScreen> {
         context,
         smsUri(
           contact.phoneNumber,
-          body: witnessTextFor(WitnessTextReason.prayed, firstName: widget.runnerFirstName),
+          // Says when, and varies day to day (lib/models/prayer_texts.dart).
+          body: witnessPrayedText(firstName: widget.runnerFirstName, now: DateTime.now()),
         ),
         unavailable: 'No messaging app is available on this device.',
       );
