@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/prayer_item.dart';
+import '../models/prayer_texts.dart';
 import '../services/prayer_photo_service.dart';
 import '../theme/app_colors.dart';
 import 'bookplate_plate.dart';
@@ -59,6 +60,7 @@ class PrayerCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final isPerson = item.category == PrayerCategory.people;
     final scripture = item.scripture?.trim() ?? '';
+    final passage = passageForReference(scripture);
 
     final content = Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -99,8 +101,17 @@ class PrayerCard extends StatelessWidget {
         ],
         if (scripture.isNotEmpty) ...[
           const SizedBox(height: 12),
+          // The verse itself when it is one of ours (BSB), then the reference.
+          if (passage.text.isNotEmpty) ...[
+            Text(
+              passage.text,
+              textAlign: TextAlign.center,
+              style: textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, height: 1.35),
+            ),
+            const SizedBox(height: 6),
+          ],
           Text(
-            scripture,
+            passage.text.isEmpty ? scripture : '${passage.reference}, BSB',
             textAlign: TextAlign.center,
             style: textTheme.bodyMedium?.copyWith(
               color: AppColors.antiqueBrass,

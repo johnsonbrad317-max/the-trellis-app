@@ -52,7 +52,7 @@ Three roles, and one account can hold more than one (a role switcher sits in the
 - Never call anything a **journal**.
 - Check-in prompts are generated from the rhythm title: put-on rhythms become "Did you ___?" and throw-offs become "Did you avoid ___?". Write rhythm titles so that reads naturally ("Finish work by 6 PM," not "Be done with work by 6 PM").
 - Title Case for display; abbreviations already in capitals stay that way ("6 PM", "AA").
-- Scripture in the app is **KJV** (public domain).
+- Scripture in the app is the **Berean Standard Bible (BSB)**, public domain, quoted word for word with ", BSB" after the reference. The prayer-text verses live in `lib/models/scripture_verses.dart`.
 - Buttons say what happens: "Remove," "Keep It," "Request Unlock," "Check again."
 
 ---

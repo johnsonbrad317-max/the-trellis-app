@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../models/prayer_item.dart';
+import '../../models/prayer_texts.dart';
 import '../../models/runner_profile.dart';
 import '../../services/prayer_photo_service.dart';
 import '../../theme/app_colors.dart';
@@ -20,6 +21,7 @@ import '../../widgets/launch_link.dart';
 import '../../widgets/prayer_garden_field.dart';
 import '../../widgets/prayer_medallion.dart';
 import '../../widgets/prayer_photo_row.dart';
+import '../../widgets/scripture_chooser.dart';
 import 'daily_prayer_screen.dart';
 
 enum _GardenView { active, answered }
@@ -222,7 +224,26 @@ class _PrayerGardenScreenState extends State<PrayerGardenScreen> {
                 labelText: 'Scripture (optional)',
                 hintText: 'e.g. Philippians 4:6-7',
               ),
+              // Rebuilds so the verse under the field follows what is typed.
+              onChanged: (_) => setDialogState(() {}),
             ),
+            // Type a reference, or choose one by theme (BSB). A reference we
+            // have the text for shows it here, as it will on the card.
+            Align(
+              alignment: Alignment.centerRight,
+              child: BookplateButton(
+                label: 'Choose a verse',
+                variant: BookplateButtonVariant.link,
+                compact: true,
+                onPressed: () async {
+                  final picked = await showScripturePickerSheet(dialogContext);
+                  if (picked == null) return;
+                  setDialogState(() => scriptureController.text = picked.reference);
+                },
+              ),
+            ),
+            if (passageForReference(scriptureController.text).text.isNotEmpty)
+              ScripturePassagePlate(passage: passageForReference(scriptureController.text)),
             const SizedBox(height: 4),
             ToggleRow(
               title: 'Share with Witness(es)',
@@ -1073,13 +1094,8 @@ class _PrayerDetailSheetState extends State<_PrayerDetailSheet> {
             ],
             if (item.scripture != null) ...[
               const SizedBox(height: 12),
-              Text(
-                item.scripture!,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: AppColors.antiqueBrass,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
+              // The verse itself when it is one of ours (BSB).
+              ScripturePassagePlate(passage: passageForReference(item.scripture!)),
             ],
             if (item.isAnswered) ...[
               const SizedBox(height: 16),

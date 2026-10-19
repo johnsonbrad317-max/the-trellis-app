@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'bookplate_dialog.dart';
 
-/// A short, positive-toned KJV verse shown when a prayer queue is finished
-/// — public-domain text, no attribution/licensing concerns.
+/// A short, positive-toned verse shown when a prayer queue is finished — in
+/// the Berean Standard Bible, like every verse in the app (public domain).
 class PrayerVerse {
   const PrayerVerse({required this.text, required this.reference});
 
@@ -16,28 +16,28 @@ class PrayerVerse {
 
 const _prayerCompletionVerses = [
   PrayerVerse(
-    text: 'Rejoice evermore. Pray without ceasing. In every thing give thanks: for this '
-        'is the will of God in Christ Jesus concerning you.',
-    reference: '1 Thessalonians 5:16-18, KJV',
+    text: 'Rejoice at all times. Pray without ceasing. Give thanks in every circumstance, for '
+        'this is God’s will for you in Christ Jesus.',
+    reference: '1 Thessalonians 5:16–18, BSB',
   ),
   PrayerVerse(
-    text: 'Be careful for nothing; but in every thing by prayer and supplication with '
-        'thanksgiving let your requests be made known unto God.',
-    reference: 'Philippians 4:6, KJV',
+    text: 'Be anxious for nothing, but in everything, by prayer and petition, with '
+        'thanksgiving, present your requests to God.',
+    reference: 'Philippians 4:6, BSB',
   ),
   PrayerVerse(
-    text: 'The effectual fervent prayer of a righteous man availeth much.',
-    reference: 'James 5:16, KJV',
+    text: 'The prayer of a righteous man has great power to prevail.',
+    reference: 'James 5:16, BSB',
   ),
   PrayerVerse(
-    text: 'Call unto me, and I will answer thee, and shew thee great and mighty things, '
-        'which thou knowest not.',
-    reference: 'Jeremiah 33:3, KJV',
+    text: 'Call to Me, and I will answer and show you great and unsearchable things you do '
+        'not know.',
+    reference: 'Jeremiah 33:3, BSB',
   ),
   PrayerVerse(
-    text: 'And this is the confidence that we have in him, that, if we ask any thing '
-        'according to his will, he heareth us.',
-    reference: '1 John 5:14, KJV',
+    text: 'And this is the confidence that we have before Him: If we ask anything according '
+        'to His will, He hears us.',
+    reference: '1 John 5:14, BSB',
   ),
 ];
 
@@ -69,7 +69,7 @@ class PrayerCompletionContact {
 
 /// The shared "you finished your prayer queue" view — used identically by
 /// both the Runner's and the Witness's daily prayer flow. Exclusively EB
-/// Garamond typography and a randomized KJV verse; no clip-art icons.
+/// Garamond typography and a randomized BSB verse; no clip-art icons.
 class PrayerCompletionView extends StatelessWidget {
   const PrayerCompletionView({
     super.key,

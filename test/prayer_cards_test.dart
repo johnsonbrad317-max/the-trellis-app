@@ -682,13 +682,17 @@ void main() {
           'family, and for the doctors who are caring for her.',
     ).join(' ');
 
-    PrayerItem person({String details = 'Knee surgery.', DateTime? lastPrayed}) =>
+    PrayerItem person({
+      String details = 'Knee surgery.',
+      DateTime? lastPrayed,
+      String scripture = 'Philippians 4:6-7',
+    }) =>
         PrayerItem(
           id: 'p1',
           category: PrayerCategory.people,
           title: 'Maria Lopez',
           details: details,
-          scripture: 'Philippians 4:6-7',
+          scripture: scripture,
           lastPrayedDate: lastPrayed,
         );
 
@@ -707,7 +711,12 @@ void main() {
       await tester.pumpWidget(_host(SizedBox(
         width: 327,
         height: 347,
-        child: PrayerCard(item: person(lastPrayed: DateTime(2026, 10, 4)), today: today),
+        // A reference typed by hand that is not in the app's BSB list shows as
+        // written — and keeps this prayer short enough to sit balanced.
+        child: PrayerCard(
+          item: person(lastPrayed: DateTime(2026, 10, 4), scripture: 'Psalm 139:14'),
+          today: today,
+        ),
       )));
 
       expect(tester.takeException(), isNull);
@@ -716,7 +725,7 @@ void main() {
       expect(find.text('PERSON'), findsNothing);
       expect(find.text('Maria Lopez'), findsOneWidget);
       expect(find.text('Knee surgery.'), findsOneWidget);
-      expect(find.text('Philippians 4:6-7'), findsOneWidget);
+      expect(find.text('Psalm 139:14'), findsOneWidget);
       expect(find.text('Last prayed yesterday'), findsOneWidget);
 
       // Balanced in the frame: about as much room above the medallion as
@@ -749,7 +758,9 @@ void main() {
       await tester.drag(find.byType(PrayerCard), const Offset(0, -5000));
       await tester.pumpAndSettle();
       expect(tester.getRect(lastLine).bottom, lessThanOrEqualTo(card.bottom));
-      expect(find.text('Philippians 4:6-7'), findsOneWidget);
+      // A reference in the app's BSB list shows the verse itself, then its reference.
+      expect(find.textContaining('Be anxious for nothing'), findsOneWidget);
+      expect(find.text('Philippians 4:6–7, BSB'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

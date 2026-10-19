@@ -278,7 +278,7 @@ class RuleBuilderScreen extends StatelessWidget {
     final confirmed = await showBookplateForm<bool>(
       context,
       title: 'A Sin to Throw Off',
-      message: '"Let us throw off everything that hinders and the sin that so easily '
+      message: '"Let us throw off every encumbrance and the sin that so easily '
           'entangles." Name it plainly; each day you\'ll be asked whether you avoided it.',
       bodyBuilder: (dialogContext, setDialogState) {
         final textTheme = Theme.of(dialogContext).textTheme;
@@ -538,7 +538,7 @@ class RuleBuilderScreen extends StatelessWidget {
             Text('Sins to Throw Off', style: textTheme.titleLarge),
             const SizedBox(height: 4),
             Text(
-              '"Everything that hinders and the sin that so easily entangles." Each is checked '
+              '"Every encumbrance and the sin that so easily entangles." Each is checked '
               'daily: did you avoid it?',
               style: textTheme.bodySmall,
             ),

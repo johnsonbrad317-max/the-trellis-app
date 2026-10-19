@@ -10,7 +10,7 @@ import 'package:trellis/theme/app_theme.dart';
 /// supply.
 void main() {
   const headlines = [
-    'Let us throw off everything that hinders…',
+    'Let us throw off every encumbrance…',
     'Create a Rule of Life for this season.',
     'Walk alongside a Runner.',
     'Keep a living prayer list.',

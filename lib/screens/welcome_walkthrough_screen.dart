@@ -75,13 +75,13 @@ class WelcomeSlide {
 const List<WelcomeSlide> welcomeSlides = [
   WelcomeSlide(
     kicker: 'THE RACE',
-    headline: 'Let us throw off everything that hinders…',
+    headline: 'Let us throw off every encumbrance…',
     art: WelcomeArt.ruleCard,
     isScripture: true,
     body:
-        '…and the sin that so easily entangles. And let us run with perseverance the race '
-        'marked out for us, fixing our eyes on Jesus, the pioneer and perfecter of faith. '
-        '— Hebrews 12:1–2',
+        '…and the sin that so easily entangles, and let us run with endurance the race set '
+        'out for us. Let us fix our eyes on Jesus, the author and perfecter of our faith. '
+        '— Hebrews 12:1–2, BSB',
   ),
   WelcomeSlide(
     kicker: 'THE RUNNER',
