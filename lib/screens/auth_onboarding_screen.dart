@@ -8,6 +8,7 @@ import '../widgets/bookplate_dialog.dart';
 import '../widgets/launch_link.dart';
 import '../widgets/trellis_scaffold.dart';
 import 'profile_home.dart';
+import 'reset_password_screen.dart';
 import 'role_walkthrough_screen.dart';
 import 'welcome_walkthrough_screen.dart';
 
@@ -159,6 +160,23 @@ class _AuthOnboardingScreenState extends State<AuthOnboardingScreen> {
                           onSubmitted: (_) {
                             if (!_isSubmitting) _handleSignIn();
                           },
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: BookplateButton(
+                            label: 'Forgot your password?',
+                            variant: BookplateButtonVariant.link,
+                            compact: true,
+                            onPressed: _isSubmitting
+                                ? null
+                                : () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => ResetPasswordScreen(
+                                          initialEmail: _emailController.text,
+                                        ),
+                                      ),
+                                    ),
+                          ),
                         ),
                         if (_errorMessage != null) ...[
                           const SizedBox(height: 16),
