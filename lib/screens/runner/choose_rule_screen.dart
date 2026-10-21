@@ -56,7 +56,8 @@ class _ChooseRuleScreenState extends State<ChooseRuleScreen> {
       final saved = await runWithFailureNotice(
         context,
         () => _profile.applyRuleOfLifeBaseline(fresh),
-        failure: "Couldn't add that Rule. Check your connection and try again.",
+        failure: "Couldn't add that Rule. Please try again; if it keeps happening, send "
+            'feedback from the leaf icon at the top.',
       );
       if (!mounted) return;
       setState(() => _applying = null);

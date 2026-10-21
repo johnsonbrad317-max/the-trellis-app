@@ -1609,8 +1609,7 @@ class RunnerProfile extends ChangeNotifier {
           'weekly_days': isThrowOff ? const <int>[] : (weeklyDays ?? <int>{}).toList(),
           'is_anchor_rhythm': isAnchorRhythm,
           'is_church_mandated': false,
-          // Only sent when true (see RuleItem.toInsertRow).
-          if (isThrowOff) 'is_throw_off': true,
+          'is_throw_off': isThrowOff,
         })
         .select()
         .single();
@@ -1625,20 +1624,7 @@ class RunnerProfile extends ChangeNotifier {
     _refuseInPreview();
     final rows = await supabase
         .from('rule_items')
-        .insert([
-          for (final item in items)
-            {
-              'runner_id': id,
-              'category': item.category.dbValue,
-              'title': item.title,
-              'frequency': item.frequency.dbValue,
-              'weekly_days': item.weeklyDays.toList(),
-              'is_anchor_rhythm': item.isAnchorRhythm,
-              'is_church_mandated': false,
-              // Only sent when true (see RuleItem.toInsertRow).
-              if (item.isThrowOff) 'is_throw_off': true,
-            },
-        ])
+        .insert(baselineInsertRows(id, items))
         .select();
     ruleItems.addAll([for (final row in rows) RuleItem.fromRow(row)]);
     notifyListeners();

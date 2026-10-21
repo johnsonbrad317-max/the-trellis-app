@@ -100,10 +100,12 @@ void main() {
       expect(practice.checkInPrompt, 'Did you pray for 15 Minutes?');
     });
 
-    test('is sent to the database only when true, and read back tolerantly', () {
-      expect(sin.toInsertRow('u').containsKey('is_throw_off'), isTrue);
+    test('is always sent to the database, and read back tolerantly', () {
+      // Always present: in a batch insert a missing column becomes NULL, and
+      // is_throw_off is NOT NULL (the starter-Rule failure, round 7).
+      expect(sin.toInsertRow('u')['is_throw_off'], isTrue);
       final practice = RuleItem(id: 'p', category: RuleCategory.abidingPrayer, title: 'pray');
-      expect(practice.toInsertRow('u').containsKey('is_throw_off'), isFalse);
+      expect(practice.toInsertRow('u')['is_throw_off'], isFalse);
       final legacy = RuleItem.fromRow({
         'id': 'r',
         'category': 'work_rest',

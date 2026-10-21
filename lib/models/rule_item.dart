@@ -218,9 +218,7 @@ class RuleItem {
         'weekly_days': weeklyDays.toList(),
         'is_anchor_rhythm': isAnchorRhythm,
         'is_church_mandated': isChurchMandated,
-        // Only sent when true: a database that predates migration 024 has no
-        // such column and would refuse the whole row.
-        if (isThrowOff) 'is_throw_off': true,
+        'is_throw_off': isThrowOff,
       };
 
   final String id;

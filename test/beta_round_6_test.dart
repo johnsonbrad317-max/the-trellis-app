@@ -44,4 +44,21 @@ void main() {
     })!;
     expect(departed.title, 'Sarah has left The Trellis');
   });
+
+  test('every starter Rule saves as rows with the same columns, throw-offs included', () {
+    for (final baseline in ruleOfLifeBaselines) {
+      final rows = baselineInsertRows('runner-1', baseline.items);
+      expect(rows, hasLength(baseline.items.length), reason: baseline.name);
+      final columns = rows.first.keys.toSet();
+      for (final row in rows) {
+        expect(row.keys.toSet(), columns, reason: baseline.name);
+        expect(row['is_throw_off'], isA<bool>(), reason: baseline.name);
+      }
+    }
+    // The Rule Grok hit: put-ons and a throw-off in one insert.
+    final working = ruleOfLifeBaselines.firstWhere((b) => b.name == 'Working Parent');
+    final rows = baselineInsertRows('runner-1', working.items);
+    expect(rows.where((r) => r['is_throw_off'] == true), isNotEmpty);
+    expect(rows.where((r) => r['is_throw_off'] == false), isNotEmpty);
+  });
 }

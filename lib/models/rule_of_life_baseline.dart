@@ -212,3 +212,22 @@ const ruleOfLifeBaselines = [
     ],
   ),
 ];
+
+/// The rows that save [items] for [runnerId] in one insert. Every row carries
+/// exactly the same columns: in a batch, PostgREST sets a column some rows
+/// leave out to NULL in the rest, and is_throw_off is NOT NULL — leaving it
+/// off the put-on rows of a Rule that also has a throw-off made the whole
+/// starter Rule fail to save.
+List<Map<String, dynamic>> baselineInsertRows(String runnerId, List<BaselineRuleItem> items) => [
+      for (final item in items)
+        {
+          'runner_id': runnerId,
+          'category': item.category.dbValue,
+          'title': item.title,
+          'frequency': item.frequency.dbValue,
+          'weekly_days': item.weeklyDays.toList(),
+          'is_anchor_rhythm': item.isAnchorRhythm,
+          'is_church_mandated': false,
+          'is_throw_off': item.isThrowOff,
+        },
+    ];
