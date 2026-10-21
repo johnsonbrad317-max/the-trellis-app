@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 import 'firebase_options.dart';
@@ -17,6 +18,7 @@ import 'services/purchases_service.dart';
 import 'services/supabase_client.dart';
 import 'theme/app_theme.dart';
 import 'widgets/keyboard_host.dart';
+import 'widgets/web_preview_banner.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,6 +65,11 @@ Future<void> main() async {
   // silent): on session start and on every return to the foreground.
   await _startOptional('Presence', () async => Presence.start());
 
+  // Flutter draws the web page as one canvas; with semantics on, every
+  // button and field also gets a real, labelled element in the page — for
+  // screen readers, and for testers driving the web preview with a browser
+  // bot. (Phones build this tree on demand already.)
+  if (kIsWeb) SemanticsBinding.instance.ensureSemantics();
   runApp(const TrellisApp());
 }
 
@@ -89,7 +96,11 @@ class TrellisApp extends StatelessWidget {
       scrollBehavior: const _AppScrollBehavior(),
       // Keyboard manners (Done bar, tap-away, stray-keyboard clean-up) and the
       // status bar's dark marks, for every route.
-      builder: (context, child) => KeyboardHost(child: child ?? const SizedBox.shrink()),
+      // On the web, a strip naming the phone-only parts (WebPreviewBanner).
+      builder: (context, child) {
+        final page = child ?? const SizedBox.shrink();
+        return KeyboardHost(child: kIsWeb ? WebPreviewBanner(child: page) : page);
+      },
       home: const AuthGate(),
     );
   }

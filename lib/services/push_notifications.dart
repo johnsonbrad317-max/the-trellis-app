@@ -55,6 +55,9 @@ class PushNotifications {
   /// Realtime surfaces (see RunnerProfile's unlock-request/grace-nudge/
   /// meeting-proposal handling), never the only way to see one of these.
   static Future<void> registerForCurrentUser(String profileId) async {
+    // The web build has no push key: don't ask the browser for a permission
+    // it would never use.
+    if (kIsWeb && _webVapidKey.isEmpty) return;
     try {
       final messaging = FirebaseMessaging.instance;
       final settings = await messaging.requestPermission();
